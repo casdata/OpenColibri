@@ -13,10 +13,12 @@
 #define ALTERNATIVE_TASK_SIZE       4096
 #define ALTERNATIVE_TASK_PRIORITY   4
 
+#define STATUS_LED_PIN      GPIO_NUM_2
+#define BOILER_PIN          GPIO_NUM_27
 #define VOLUMETRIC_PIN      GPIO_NUM_34
 #define MCP23017_INTB_PIN   GPIO_NUM_18
-#define MCP23017_IN_RS_PIN  GPIO_NUM_17
-#define MCP23017_OUT_RS_PIN GPIO_NUM_16
+#define MCP23017_IN_RS_PIN  GPIO_NUM_19
+#define MCP23017_OUT_RS_PIN GPIO_NUM_5
 #define CLK_UI_PIN          GPIO_NUM_32
 #define SH_LD_UI_PIN        GPIO_NUM_33         //SCLR_PIN
 #define IN_SERIAL_UI_PIN    GPIO_NUM_35
@@ -334,7 +336,7 @@ static void inputMonitorTask(void *pvParameters){
 
                     ESP_LOGE(ALTERNATIVE_TASK_TAG, "Read it!!");
 
-                    ESP_LOGW(MAIN_TASK_TAG, "IO -> %d %d %d %d %d %d %d %d", getBitFromByte(inputIO_Buff, 7),
+                    ESP_LOGW(MAIN_TASK_TAG, "nIO -> %d %d %d %d %d %d %d %d", getBitFromByte(inputIO_Buff, 7),
                                                                     getBitFromByte(inputIO_Buff, 6),
                                                                     getBitFromByte(inputIO_Buff, 5),
                                                                     getBitFromByte(inputIO_Buff, 4),
@@ -342,6 +344,11 @@ static void inputMonitorTask(void *pvParameters){
                                                                     getBitFromByte(inputIO_Buff, 2),
                                                                     getBitFromByte(inputIO_Buff, 1),
                                                                     getBitFromByte(inputIO_Buff, 0));
+
+
+                    gpio_set_level(BOILER_PIN, getBitFromByte(inputIO_Buff, 3));
+                    gpio_set_level(STATUS_LED_PIN, getBitFromByte(inputIO_Buff, 2));
+
 
                 break;
             }
@@ -514,6 +521,8 @@ static void initGPIO(){
     gpio_reset_pin(MCP23017_OUT_RS_PIN);
     gpio_reset_pin(MCP23017_INTB_PIN);
     gpio_reset_pin(VOLUMETRIC_PIN);
+    gpio_reset_pin(BOILER_PIN);
+    gpio_reset_pin(STATUS_LED_PIN);
 
     gpio_set_direction(CLK_UI_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(SH_LD_UI_PIN, GPIO_MODE_OUTPUT);
@@ -521,6 +530,8 @@ static void initGPIO(){
     gpio_set_direction(SER_DISPLAY_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(MCP23017_IN_RS_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(MCP23017_OUT_RS_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BOILER_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(STATUS_LED_PIN, GPIO_MODE_OUTPUT);
 
     gpio_set_direction(MCP23017_INTB_PIN, GPIO_MODE_INPUT);
     gpio_set_direction(IN_SERIAL_UI_PIN, GPIO_MODE_INPUT);
@@ -533,7 +544,6 @@ static void initGPIO(){
     gpio_isr_handler_add(MCP23017_INTB_PIN, interrupt_handler, (void *)MCP23017_INTB_PIN);
     gpio_isr_handler_add(VOLUMETRIC_PIN, interrupt_handler, (void *)VOLUMETRIC_PIN);
 
-    //intrBQueue = xQueueCreate()
 
     gpio_set_level(CLK_UI_PIN, 1);
     gpio_set_level(SH_LD_UI_PIN, 0);
@@ -541,6 +551,8 @@ static void initGPIO(){
     gpio_set_level(SER_DISPLAY_PIN, 1);
     gpio_set_level(MCP23017_IN_RS_PIN, 1);
     gpio_set_level(MCP23017_OUT_RS_PIN, 1);
+    gpio_set_level(BOILER_PIN, 0);
+    gpio_set_level(STATUS_LED_PIN, 0);
 }
 
 static void initI2C(){
