@@ -7,46 +7,16 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
+#include "extend.h"
 
-#define MAIN_TASK_SIZE              4096
-#define MAIN_TASK_PRIORITY          2
-#define ALTERNATIVE_TASK_SIZE       4096
-#define ALTERNATIVE_TASK_PRIORITY   4
 
-#define STATUS_LED_PIN      GPIO_NUM_2
-#define BOILER_PIN          GPIO_NUM_27
-#define VOLUMETRIC_PIN      GPIO_NUM_34
-#define MCP23017_INTB_PIN   GPIO_NUM_18
-#define MCP23017_IN_RS_PIN  GPIO_NUM_19
-#define MCP23017_OUT_RS_PIN GPIO_NUM_5
-#define CLK_UI_PIN          GPIO_NUM_32
-#define SH_LD_UI_PIN        GPIO_NUM_33         //SCLR_PIN
-#define IN_SERIAL_UI_PIN    GPIO_NUM_35
-#define RCK_DISPLAY_PIN     GPIO_NUM_25
-#define SER_DISPLAY_PIN     GPIO_NUM_26
-
-#define I2C_SCL_PIN         GPIO_NUM_22
-#define I2C_SDA_PIN         GPIO_NUM_21
-#define I2C_PORT_NUM        0
-#define I2C_FREQ_HZ         100000
-#define I2C_TX_BUFF_DISABLE 0
-#define I2C_RX_BUFF_DISABLE 0
-#define I2C_TIMEOUT_MS      1000      
-
-#define I2C_ACK             0x0
-#define I2C_NACK            0x1
-
-#define MCP23017_INPUT_ADDR     0x24
-#define MCP23017_OUTPUT_ADDR    0x20
-
-#define MAIN_TASK_TAG           "MAIN_T"
-#define ALTERNATIVE_TASK_TAG    "ALTERNATIVE_T"
-#define INIT_ERROR_TAG          "INIT_ERROR_T"
 
 
 uint8_t *inputIO_Buff;
 uint8_t *outputIO_Buff;
 uint16_t countUp = 0;
+
+
 
 
 QueueHandle_t xQueueIntB;
@@ -172,6 +142,94 @@ void clearBit2Byte(uint8_t *byteData, const uint8_t bitPos){
 
 bool getBitFromByte(uint8_t *byteData, const uint8_t bitPos){
     return (bool)( (*byteData >> bitPos) & 1);
+}
+
+void setRelay(uint8_t *byteData, const OutputRelays outputRelays){
+    switch(outputRelays){
+        case SOLENOID_VALVE_2:
+            setBit2Byte(byteData + 1, 6);
+            break;
+        case SOLENOID_VALVE_1:
+            setBit2Byte(byteData + 1, 5);
+            break;
+        case COFFEE_BREWER_MOTOR:
+            setBit2Byte(byteData + 1, 4);
+            break;
+        case PUMP:
+            setBit2Byte(byteData + 1, 3);
+            break;
+        case COFFEE_GRINDER_MOTOR:
+            setBit2Byte(byteData + 1, 2);
+            break;
+        case COFFEE_RELEASE_MAGNET:
+            setBit2Byte(byteData + 1, 1);
+            break;
+        case THREE_WAY_VALVE:
+            setBit2Byte(byteData + 1, 0);
+            break;
+        case CUP_RELEASE_MOTOR:
+            setBit2Byte(byteData, 7);
+            break;
+        case CUP_STACKER_SHIFT_MOTOR:
+            setBit2Byte(byteData, 6);
+            break;
+        case WATER_INLET_VALVE:
+            setBit2Byte(byteData, 5);
+            break;
+        case DOSER_DEVICE_1:
+            setBit2Byte(byteData, 4);
+            break;
+        case DOSER_DEVICE_2:
+            setBit2Byte(byteData, 3);
+            break;
+        case WHIPPER:
+            setBit2Byte(byteData, 1);
+            break;
+    }
+}
+
+void resetRelay(uint8_t *byteData, const OutputRelays outputRelays){
+    switch(outputRelays){
+        case SOLENOID_VALVE_2:
+            clearBit2Byte(byteData + 1, 6);
+            break;
+        case SOLENOID_VALVE_1:
+            clearBit2Byte(byteData + 1, 5);
+            break;
+        case COFFEE_BREWER_MOTOR:
+            clearBit2Byte(byteData + 1, 4);
+            break;
+        case PUMP:
+            clearBit2Byte(byteData + 1, 3);
+            break;
+        case COFFEE_GRINDER_MOTOR:
+            clearBit2Byte(byteData + 1, 2);
+            break;
+        case COFFEE_RELEASE_MAGNET:
+            clearBit2Byte(byteData + 1, 1);
+            break;
+        case THREE_WAY_VALVE:
+            clearBit2Byte(byteData + 1, 0);
+            break;
+        case CUP_RELEASE_MOTOR:
+            clearBit2Byte(byteData, 7);
+            break;
+        case CUP_STACKER_SHIFT_MOTOR:
+            clearBit2Byte(byteData, 6);
+            break;
+        case WATER_INLET_VALVE:
+            clearBit2Byte(byteData, 5);
+            break;
+        case DOSER_DEVICE_1:
+            clearBit2Byte(byteData, 4);
+            break;
+        case DOSER_DEVICE_2:
+            clearBit2Byte(byteData, 3);
+            break;
+        case WHIPPER:
+            clearBit2Byte(byteData, 1);
+            break;
+    }
 }
 
 
@@ -432,60 +490,69 @@ static void mainTask(void* pvParameters){
 
         switch(countUp){
             case 1:
-                setBit2Byte(outputIO_Buff, 0);
-                clearBit2Byte(outputIO_Buff, 7);
-
-                setBit2Byte(outputIO_Buff + 1, 1);
-                clearBit2Byte(outputIO_Buff + 1, 0);
+                setRelay(outputIO_Buff, SOLENOID_VALVE_2);
+                resetRelay(outputIO_Buff, WHIPPER);
+                ESP_LOGI("relay", "01 - SOLENOID_VALVE_2");
             break;
             case 2:
-                setBit2Byte(outputIO_Buff, 1);
-                clearBit2Byte(outputIO_Buff, 0);
-
-                setBit2Byte(outputIO_Buff + 1, 2);
-                clearBit2Byte(outputIO_Buff + 1, 1);
+                setRelay(outputIO_Buff, SOLENOID_VALVE_1);
+                resetRelay(outputIO_Buff, SOLENOID_VALVE_2);
+                ESP_LOGI("relay", "02 - SOLENOID_VALVE_1");
             break;
             case 3:
-                setBit2Byte(outputIO_Buff, 2);
-                clearBit2Byte(outputIO_Buff, 1);
-
-                setBit2Byte(outputIO_Buff + 1, 3);
-                clearBit2Byte(outputIO_Buff + 1, 2);
+                setRelay(outputIO_Buff, COFFEE_BREWER_MOTOR);
+                resetRelay(outputIO_Buff, SOLENOID_VALVE_1);
+                ESP_LOGI("relay", "03 - COFFEE_BREWER_MOTOR");
             break;
             case 4:
-                setBit2Byte(outputIO_Buff, 3);
-                clearBit2Byte(outputIO_Buff, 2);
-
-                setBit2Byte(outputIO_Buff + 1, 4);
-                clearBit2Byte(outputIO_Buff + 1, 3);
+                setRelay(outputIO_Buff, PUMP);
+                resetRelay(outputIO_Buff, COFFEE_BREWER_MOTOR);
+                ESP_LOGI("relay", "04 - PUMP");
             break;
             case 5:
-                setBit2Byte(outputIO_Buff, 4);
-                clearBit2Byte(outputIO_Buff, 3);
-
-                setBit2Byte(outputIO_Buff + 1, 5);
-                clearBit2Byte(outputIO_Buff + 1, 4);
+                setRelay(outputIO_Buff, COFFEE_GRINDER_MOTOR);
+                resetRelay(outputIO_Buff, PUMP);
+                ESP_LOGI("relay", "05 - COFFEE_GRINDER_MOTOR");
             break;
             case 6:
-                setBit2Byte(outputIO_Buff, 5);
-                clearBit2Byte(outputIO_Buff, 4);
-
-                setBit2Byte(outputIO_Buff + 1, 6);
-                clearBit2Byte(outputIO_Buff + 1, 5);
+                setRelay(outputIO_Buff, COFFEE_RELEASE_MAGNET);
+                resetRelay(outputIO_Buff, COFFEE_GRINDER_MOTOR);
+                ESP_LOGI("relay", "06 - COFFEE_RELEASE_MAGNET");
             break;
             case 7:
-                setBit2Byte(outputIO_Buff, 6);
-                clearBit2Byte(outputIO_Buff, 5);
-
-                setBit2Byte(outputIO_Buff + 1, 7);
-                clearBit2Byte(outputIO_Buff + 1, 6);
+                setRelay(outputIO_Buff, THREE_WAY_VALVE);
+                resetRelay(outputIO_Buff, COFFEE_RELEASE_MAGNET);
+                ESP_LOGI("relay", "07 - THREE_WAY_VALVE");
             break;
             case 8:
-                setBit2Byte(outputIO_Buff, 7);
-                clearBit2Byte(outputIO_Buff, 6);
-
-                //setBit2Byte(outputIO_Buff + 1, 0);
-                clearBit2Byte(outputIO_Buff + 1, 7);
+                setRelay(outputIO_Buff, CUP_RELEASE_MOTOR);
+                resetRelay(outputIO_Buff, THREE_WAY_VALVE);
+                ESP_LOGI("relay", "08 - CUP_RELEASE_MOTOR");
+                break;
+            case 9:
+                setRelay(outputIO_Buff, CUP_STACKER_SHIFT_MOTOR);
+                resetRelay(outputIO_Buff, CUP_RELEASE_MOTOR);
+                ESP_LOGI("relay", "09 - CUP_STACKER_SHIFT_MOTOR");
+                break;
+            case 10:
+                setRelay(outputIO_Buff, WATER_INLET_VALVE);
+                resetRelay(outputIO_Buff, CUP_STACKER_SHIFT_MOTOR);
+                ESP_LOGI("relay", "10 - WATER_INLET_VALVE");
+                break;
+            case 11:
+                setRelay(outputIO_Buff, DOSER_DEVICE_1);
+                resetRelay(outputIO_Buff, WATER_INLET_VALVE);
+                ESP_LOGI("relay", "11 - DOSER_DEVICE_1");
+                break;
+            case 12:
+                setRelay(outputIO_Buff, DOSER_DEVICE_2);
+                resetRelay(outputIO_Buff, DOSER_DEVICE_1);
+                ESP_LOGI("relay", "12 - DOSER_DEVICE_2");
+                break;
+            case 13:
+                setRelay(outputIO_Buff, WHIPPER);
+                resetRelay(outputIO_Buff, DOSER_DEVICE_2);
+                ESP_LOGI("relay", "13 - WHIPPER");
                 countUp = 0;
             break;
             default:
@@ -499,7 +566,7 @@ static void mainTask(void* pvParameters){
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, outputIO_Buff, 2);              
 
 
-        vTaskDelay(pdMS_TO_TICKS(400));
+        vTaskDelay(pdMS_TO_TICKS(1000)); //800
     }
 }
 
