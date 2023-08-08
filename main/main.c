@@ -14,7 +14,6 @@
 
 uint8_t *inputIO_Buff;
 uint8_t *outputIO_Buff;
-uint16_t countUp = 0;
 
 
 
@@ -98,6 +97,8 @@ void initI2C_MCP23017_Out(){
 
     //*(data2Send) = 0x9;//0xb7;
     //*(data2Send + 1) = 0xe;//0xaa;
+
+    //memset(outputIO_Buff, 0, 2);
  
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, outputIO_Buff, 2);               //Clear all output pins.
 
@@ -113,7 +114,7 @@ void initI2C_MCP23017_Out(){
 void initI2C_MCP23017_In(){
     uint8_t *dataBuff = malloc(1);
 
-    memset(dataBuff, 0xf, 1);
+    memset(dataBuff, 0x3f, 1);
 
     writeBytesMCP2307(MCP23017_INPUT_ADDR, 0x05, dataBuff, 1);              //GPINTENB
 
@@ -140,9 +141,11 @@ void clearBit2Byte(uint8_t *byteData, const uint8_t bitPos){
     *byteData &= ~(1 << bitPos);
 }
 
-bool getBitFromByte(uint8_t *byteData, const uint8_t bitPos){
-    return (bool)( (*byteData >> bitPos) & 1);
+bool readSW(uint8_t *byteData, const SensorSw swName){
+    return (bool)( (*byteData >> (uint8_t)swName) & 1);
 }
+
+
 
 void setRelay(uint8_t *byteData, const OutputRelays outputRelays){
     switch(outputRelays){
@@ -394,17 +397,17 @@ static void inputMonitorTask(void *pvParameters){
 
                     ESP_LOGE(ALTERNATIVE_TASK_TAG, "Read it!!");
 
-                    ESP_LOGW(MAIN_TASK_TAG, "nIO -> %d %d %d %d %d %d %d %d", getBitFromByte(inputIO_Buff, 7),
-                                                                    getBitFromByte(inputIO_Buff, 6),
-                                                                    getBitFromByte(inputIO_Buff, 5),
-                                                                    getBitFromByte(inputIO_Buff, 4),
-                                                                    getBitFromByte(inputIO_Buff, 3),
-                                                                    getBitFromByte(inputIO_Buff, 2),
-                                                                    getBitFromByte(inputIO_Buff, 1),
-                                                                    getBitFromByte(inputIO_Buff, 0));
+                    ESP_LOGW(MAIN_TASK_TAG, "nIO -> %d %d %d %d %d %d %d %d", readSW(inputIO_Buff, 7),
+                             readSW(inputIO_Buff, 6),
+                             readSW(inputIO_Buff, 5),
+                             readSW(inputIO_Buff, 4),
+                             readSW(inputIO_Buff, 3),
+                             readSW(inputIO_Buff, 2),
+                             readSW(inputIO_Buff, 1),
+                             readSW(inputIO_Buff, 0));
 
 
-                    gpio_set_level(BOILER_PIN, getBitFromByte(inputIO_Buff, 3));
+                    //gpio_set_level(BOILER_PIN, getBitFromByte(inputIO_Buff, 3));
                     gpio_set_level(STATUS_LED_PIN, getBitFromByte(inputIO_Buff, 2));
 
 
@@ -467,25 +470,10 @@ static void mainTask(void* pvParameters){
 
         //ESP_LOGI(MAIN_TASK_TAG, "-> %d", gpio_get_level(MCP23017_INTB_PIN));
 
-        /*if(gpio_get_level(MCP23017_INTB_PIN)){
 
-            ESP_LOGW(MAIN_TASK_TAG, "READING....");
 
-            readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, inputIO_Buff, 1);
 
-        
-            ESP_LOGW(MAIN_TASK_TAG, "clear IO -> %d %d %d %d %d %d %d %d", getBitFromByte(inputIO_Buff, 7),
-                                                                    getBitFromByte(inputIO_Buff, 6),
-                                                                    getBitFromByte(inputIO_Buff, 5),
-                                                                    getBitFromByte(inputIO_Buff, 4),
-                                                                    getBitFromByte(inputIO_Buff, 3),
-                                                                    getBitFromByte(inputIO_Buff, 2),
-                                                                    getBitFromByte(inputIO_Buff, 1),
-                                                                    getBitFromByte(inputIO_Buff, 0));
-                                                                    
-        }
-        */
-
+        /*
         countUp++;
 
         switch(countUp){
@@ -559,11 +547,9 @@ static void mainTask(void* pvParameters){
                 countUp = 0;
             break;
         }
-        
-        
-        //ESP_LOGW(MAIN_TASK_TAG, "out -> %d - %d", *(outputIO_Buff), *(outputIO_Buff + 1)); 
 
-        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, outputIO_Buff, 2);              
+        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, outputIO_Buff, 2);                //write to output pins
+        */
 
 
         vTaskDelay(pdMS_TO_TICKS(1000)); //800
@@ -661,8 +647,8 @@ void app_main(void)
     initI2C_MCP23017_Out();
     initI2C_MCP23017_In();
 
-    *(outputIO_Buff) = 1;
-    *(outputIO_Buff + 1) = 2;
+    //*(outputIO_Buff) = 1;
+    //*(outputIO_Buff + 1) = 2;
 
     if(xTaskCreate(mainTask, "Main task", MAIN_TASK_SIZE, (void*)NULL, MAIN_TASK_PRIORITY, (void*)NULL) != pdPASS)
         ESP_LOGE(MAIN_TASK_TAG, "task cant be created");

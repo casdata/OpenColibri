@@ -63,7 +63,8 @@ typedef enum {
     COFFEE_RELEASE_MOTOR_CAM,   //GPB3 / COFFEE_CHAMBER_SW
     CUP_RELEASE_SW,             //GPB4 / CMSB_SW
     CUP_SENSOR_SW               //GPB5 / IVB_SW
-};
+} SensorSw;
+
 
 
 #endif //OPENCOLIBRI_EXTEND_H
