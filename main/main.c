@@ -12,10 +12,16 @@
 
 
 
+bool wasteOverflowSw = false;
+bool coffeeBrewerSw = false;
+bool airBreakSw = false;
+bool coffeeReleaseSw = false;
+bool cupReleaseSw = false;
+bool cupSensorSw = false;
+
+
 uint8_t *inputIO_Buff;
 uint8_t *outputIO_Buff;
-
-
 
 
 QueueHandle_t xQueueIntB;
@@ -45,8 +51,6 @@ int getBit2Word(const uint16_t *word, int8_t position){
 }
 
 void readBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
-    int cmdReturn;
-
     i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
 
     i2c_master_start(cmdHandle);
@@ -62,15 +66,12 @@ void readBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff,
     i2c_master_stop(cmdHandle);
 
 
-    cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
+    int cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmdHandle);
 
 }
 
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
-
-    int cmdReturn;
-
     i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
 
     i2c_master_start(cmdHandle);
@@ -81,10 +82,55 @@ void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff
     
     i2c_master_stop(cmdHandle);
 
-    cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
-
+    int cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmdHandle);
 
+}
+
+bool readMCP3421_ADC(uint16_t *adcValue){
+
+    i2c_cmd_handle_t  cmdHandle = i2c_cmd_link_create();
+
+    i2c_master_start(cmdHandle);
+    i2c_master_write_byte(cmdHandle, MCP3421_ADC_ADDR << 1 | I2C_MASTER_WRITE, I2C_MASTER_ACK);
+    i2c_master_write_byte(cmdHandle, (uint8_t)(0b00010000), I2C_MASTER_ACK);
+    i2c_master_stop(cmdHandle);
+
+    int cmdReturn  = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmdHandle);
+
+    vTaskDelay(30 / portTICK_PERIOD_MS);
+
+    if(cmdReturn == ESP_OK){
+        uint8_t dataByte0, dataByte1, dataByte2;
+
+        cmdHandle = i2c_cmd_link_create();
+        i2c_master_start(cmdHandle);
+        i2c_master_write_byte(cmdHandle, MCP3421_ADC_ADDR << 1 | I2C_MASTER_READ, I2C_MASTER_ACK);
+        i2c_master_read_byte(cmdHandle, &dataByte2, I2C_MASTER_ACK);
+        i2c_master_read_byte(cmdHandle, &dataByte1, I2C_MASTER_ACK);
+        i2c_master_read_byte(cmdHandle, &dataByte0, I2C_MASTER_NACK);
+        i2c_master_stop(cmdHandle);
+
+        cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
+        i2c_cmd_link_delete(cmdHandle);
+
+        if(cmdReturn == ESP_OK){
+            *adcValue = (dataByte2 << 8) + dataByte1;
+            return true;
+        }
+    }
+
+    return false;
+
+}
+
+void readTemp(uint16_t *thermTemp){
+    uint16_t adcValue;
+
+    if(readMCP3421_ADC(&adcValue)){
+        ESP_LOGI(TEMP_TASK_TAG, "Raw temp: %d", adcValue);
+    }
 
 }
 
@@ -376,7 +422,20 @@ void updateUI(uint16_t *uiSwitches){
                                                             
 }
 
-static void inputMonitorTask(void *pvParameters){
+static void tempMonitorTask(void *pvParameters){
+    while(1){
+
+
+        uint16_t thermistorTemp = 0;
+
+        readTemp(&thermistorTemp);
+
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+static void interruptMonitorTask(void *pvParameters){
 
     int16_t pinNum, count = 0;
 
@@ -384,17 +443,42 @@ static void inputMonitorTask(void *pvParameters){
 
         if(xQueueReceive(xQueueIntB, &pinNum, pdMS_TO_TICKS(10))){
 
-            bool readInput = false;
+            bool iState = false;
 
             switch(pinNum){
                 case VOLUMETRIC_PIN:
-                    ESP_LOGE(ALTERNATIVE_TASK_TAG, "Volumetric INTR");
+                    ESP_LOGE(INT_TASK_TAG, "Volumetric INTR");
                 break;
                 case MCP23017_INTB_PIN:
-                    ESP_LOGE(ALTERNATIVE_TASK_TAG, "Pin B INTR");
-                    
+
                     readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, inputIO_Buff, 1);
 
+                    iState = readSW(inputIO_Buff, WASTE_OVERFLOW_SW);
+                    if(wasteOverflowSw != iState)
+                        wasteOverflowSw = iState;
+
+                    iState = readSW(inputIO_Buff, COFFEE_BREWER_SW);
+                    if(coffeeBrewerSw != iState)
+                        coffeeBrewerSw = iState;
+
+                    iState = readSW(inputIO_Buff, AIR_BREAK_SW);
+                    if(airBreakSw != iState)
+                        airBreakSw = iState;
+
+                    iState = readSW(inputIO_Buff, COFFEE_RELEASE_MOTOR_CAM);
+                    if(coffeeReleaseSw != iState)
+                        coffeeReleaseSw = iState;
+
+                    iState = readSW(inputIO_Buff, CUP_RELEASE_SW);
+                    if(cupReleaseSw != iState)
+                        cupReleaseSw = iState;
+
+                    iState = readSW(inputIO_Buff, CUP_SENSOR_SW);
+                    if(cupSensorSw != iState)
+                        cupSensorSw = iState;
+
+
+                    /*
                     ESP_LOGE(ALTERNATIVE_TASK_TAG, "Read it!!");
 
                     ESP_LOGW(MAIN_TASK_TAG, "nIO -> %d %d %d %d %d %d %d %d", readSW(inputIO_Buff, 7),
@@ -409,27 +493,12 @@ static void inputMonitorTask(void *pvParameters){
 
                     //gpio_set_level(BOILER_PIN, getBitFromByte(inputIO_Buff, 3));
                     gpio_set_level(STATUS_LED_PIN, getBitFromByte(inputIO_Buff, 2));
+                    */
 
 
                 break;
             }
 
-            /*
-            if(readInput){
-
-                vTaskDelay(pdMS_TO_TICKS(20));                                
-
-                readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, inputIO_Buff, 1);
-
-                vTaskDelay(pdMS_TO_TICKS(20));   
-
-                ESP_LOGE(ALTERNATIVE_TASK_TAG, "Read it!!");
-
-                
-            }
-            */
-
-            //ESP_LOGE(ALTERNATIVE_TASK_TAG, "INTR %d - %d", pinNum, ++count);  
         }
      
     }
@@ -653,13 +722,17 @@ void app_main(void)
     if(xTaskCreate(mainTask, "Main task", MAIN_TASK_SIZE, (void*)NULL, MAIN_TASK_PRIORITY, (void*)NULL) != pdPASS)
         ESP_LOGE(MAIN_TASK_TAG, "task cant be created");
     else    
-        ESP_LOGI(MAIN_TASK_TAG, "task created!");
+        ESP_LOGI(MAIN_TASK_TAG, "MAIN task created!");
 
 
-    if(xTaskCreate(inputMonitorTask, "Alternative Task", ALTERNATIVE_TASK_SIZE, (void*)NULL,  ALTERNATIVE_TASK_PRIORITY, (void*)NULL) != pdPASS)
-        ESP_LOGE(ALTERNATIVE_TASK_TAG, "task cant be created");
+    if(xTaskCreate(interruptMonitorTask, "Interrupt Task", INTERRUPT_TASK_SIZE, (void*)NULL,  INTERRUPT_TASK_PRIORITY, (void*)NULL) != pdPASS)
+        ESP_LOGE(INT_TASK_TAG, "task cant be created");
     else    
-        ESP_LOGI(ALTERNATIVE_TASK_TAG, "task created!");
+        ESP_LOGI(INT_TASK_TAG, "INT task created!");
 
+    if(xTaskCreate(tempMonitorTask, "Temp Task", TEMP_TASK_SIZE, (void*)NULL,  TEMP_TASK_PRIORITY, (void*)NULL) != pdPASS)
+        ESP_LOGE(TEMP_TASK_TAG, "task cant be created");
+    else
+        ESP_LOGI(TEMP_TASK_TAG, "INT task created!");
 
 }

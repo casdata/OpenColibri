@@ -7,8 +7,10 @@
 
 #define MAIN_TASK_SIZE              4096
 #define MAIN_TASK_PRIORITY          2
-#define ALTERNATIVE_TASK_SIZE       4096
-#define ALTERNATIVE_TASK_PRIORITY   4
+#define TEMP_TASK_SIZE              2048
+#define TEMP_TASK_PRIORITY          4
+#define INTERRUPT_TASK_SIZE         4096
+#define INTERRUPT_TASK_PRIORITY     5
 
 #define STATUS_LED_PIN      GPIO_NUM_2
 #define BOILER_PIN          GPIO_NUM_27
@@ -35,9 +37,11 @@
 
 #define MCP23017_INPUT_ADDR     0x24
 #define MCP23017_OUTPUT_ADDR    0x20
+#define MCP3421_ADC_ADDR        0x68
 
 #define MAIN_TASK_TAG           "MAIN_T"
-#define ALTERNATIVE_TASK_TAG    "ALTERNATIVE_T"
+#define INT_TASK_TAG            "ALTERNATIVE_T"
+#define TEMP_TASK_TAG           "TEMP_T"
 #define INIT_ERROR_TAG          "INIT_ERROR_T"
 
 typedef enum {
@@ -58,13 +62,14 @@ typedef enum {
 
 typedef enum {
     WASTE_OVERFLOW_SW = 0,      //GPB0 / IPF_SW
-    COFFEE_BREWER_SW,           //GPB1 / COFFEE_MOTOR_SW
+    COFFEE_BREWER_SW,           //GPB1 / COFFEE_MOTOR_SW    / invert
     AIR_BREAK_SW,               //GPB2 / IVA_SW
-    COFFEE_RELEASE_MOTOR_CAM,   //GPB3 / COFFEE_CHAMBER_SW
+    COFFEE_RELEASE_MOTOR_CAM,   //GPB3 / COFFEE_CHAMBER_SW  / invert
     CUP_RELEASE_SW,             //GPB4 / CMSB_SW
     CUP_SENSOR_SW               //GPB5 / IVB_SW
 } SensorSw;
 
+//Thermistor temp 11.86k
 
 
 #endif //OPENCOLIBRI_EXTEND_H
