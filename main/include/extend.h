@@ -2,8 +2,19 @@
 // Created by castdata on 7/31/23.
 //
 
-#ifndef OPENCOLIBRI_EXTEND_H
-#define OPENCOLIBRI_EXTEND_H
+#ifndef EXTEND_H
+#define EXTEND_H
+
+#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "driver/uart.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "esp_log.h"
+#include "math.h"
 
 #define MAIN_TASK_SIZE              4096
 #define MAIN_TASK_PRIORITY          2
