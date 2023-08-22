@@ -16,12 +16,14 @@
 #include "esp_log.h"
 #include "math.h"
 
-#define MAIN_TASK_SIZE              4096
-#define MAIN_TASK_PRIORITY          2
-#define TEMP_TASK_SIZE              2048
-#define TEMP_TASK_PRIORITY          4
-#define INTERRUPT_TASK_SIZE         4096
-#define INTERRUPT_TASK_PRIORITY     5
+#define CONTROL_TASK_SIZE           4096
+#define CONTROL_TASK_PRIORITY       5
+#define UI_TASK_SIZE                2048
+#define UI_TASK_PRIORITY            4
+#define INTERRUPTS_TASK_SIZE        4096
+#define INTERRUPTS_TASK_PRIORITY    5
+#define BOILER_TASK_SIZE            2048
+#define BOILER_TASK_PRIORITY        4
 
 #define STATUS_LED_PIN      GPIO_NUM_2
 #define BOILER_PIN          GPIO_NUM_27
@@ -51,9 +53,10 @@
 #define MCP3421_ADC_ADDR        0x68
 
 #define MAIN_TASK_TAG           "MAIN_T"
-#define INT_TASK_TAG            "ALTERNATIVE_T"
-#define TEMP_TASK_TAG           "TEMP_T"
-#define INIT_ERROR_TAG          "INIT_ERROR_T"
+#define CONTROL_TASK_TAG        "CONTROL_T"
+#define INTERRUPTS_TASK_TAG     "INTERRUPTS_T"
+#define UI_TASK_TAG             "UI_TASK_T"
+#define BOILER_TASK_TAG         "BOILER_TASK_T"
 
 typedef enum {
     SOLENOID_VALVE_2 = 0,   //RELAY 1 / GPB6 / O.5 BOILER 3 WAY-VALVE FAR
@@ -80,7 +83,37 @@ typedef enum {
     CUP_SENSOR_SW               //GPB5 / IVB_SW
 } SensorSw;
 
-//Thermistor temp 11.86k
+typedef struct InputBoolStruct{
+    bool    wasteOverflowSw;
+    bool    coffeeBrewerSw;
+    bool    airBreakSw;
+    bool    coffeeReleaseSw;
+    bool    cupReleaseSw;
+    bool    cupSensorSw;
+} InputSwStruct;
+
+/*
+typedef struct OutputBoolStruct{
+    bool    solenoidValve2;
+    bool    solenoidValve1;
+    bool    coffeeBrewerMotor;
+    bool    pump;
+    bool    coffeeGrinderMotor;
+    bool    coffeeReleaseMagnet;
+    bool    threeWayValve;
+    bool    cupReleaseMotor;
+    bool    cupStackerShiftMotor;
+    bool    waterInletValve;
+    bool    doserDevice1;
+    bool    doserDevice2;
+    bool    whipper;
+} OutputRelayStruct;
+*/
+
+
+extern QueueHandle_t xQueueIntB;
+extern QueueHandle_t xQueueInputsSw;
+extern QueueHandle_t xQueueInputPulse;
 
 
 #endif //OPENCOLIBRI_EXTEND_H

@@ -3,12 +3,22 @@
 //
 #include "../include/uiT.h"
 
+TaskHandle_t uiTaskH = NULL;
+
 static int getBit2Word(const uint8_t *word, int8_t position){
     int bitValue = *word >> position;
 
     bitValue &= 1;
 
     return bitValue;
+}
+
+static void setBit2Word(uint16_t *word, int bitValue, int8_t position){
+
+    uint16_t mask = 1 << position;
+    mask = ~mask;
+    *word &= mask;
+    *word += (bitValue << position);
 }
 
 static void sendData2LCD(const uint8_t dataByte, const bool rW, const bool rs){
@@ -220,14 +230,128 @@ static void write2LCD(const char *dataStr, const uint8_t dataStrLength){
 
 }
 
+
 static void setLcdPos(const uint8_t x){
     setLcdDDRAM_addr(x);
 }
 
+
+void updateUI(uint16_t *uiSwitches){
+
+    
+    //Clear registers in the 74HC165 and 74HC595
+    gpio_set_level(SH_LD_UI_PIN, 1);            //LOW
+
+    vTaskDelay(pdMS_TO_TICKS(1));
+
+    gpio_set_level(SH_LD_UI_PIN, 0);            //HIGH
+
+    vTaskDelay(pdMS_TO_TICKS(1));
+
+
+    //Shift 0 to the display shift register.
+    gpio_set_level(SER_DISPLAY_PIN, 1);         //LOW
+    
+
+
+    setBit2Word(uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), 0);
+
+
+    for(size_t i = 1; i < 8; i++){
+        gpio_set_level(CLK_UI_PIN, 0);
+
+        vTaskDelay(pdMS_TO_TICKS(1));
+
+        gpio_set_level(CLK_UI_PIN, 1);
+
+        setBit2Word(uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), i);
+
+        vTaskDelay(pdMS_TO_TICKS(1));
+
+    }
+
+    for(size_t i = 0; i < 9; i++){
+        gpio_set_level(CLK_UI_PIN, 0);
+
+        vTaskDelay(pdMS_TO_TICKS(1));
+
+        gpio_set_level(CLK_UI_PIN, 1);
+
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    for(size_t i = 9; i < 11; i++){
+        gpio_set_level(CLK_UI_PIN, 0);
+
+        vTaskDelay(pdMS_TO_TICKS(1));
+
+        gpio_set_level(CLK_UI_PIN, 1);
+
+        setBit2Word(uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), i);
+
+        vTaskDelay(pdMS_TO_TICKS(1)); 
+    }
+
+
+    ESP_LOGI(UI_TASK_TAG, "%d", *uiSwitches);                                                     
+                                                            
+}
+
+
 void initUiTask(){
-    //uiTaskHandler = NULL;
+    BaseType_t xReturned = xTaskCreate(uiTask, "ui_task", UI_TASK_SIZE, (void *)NULL, UI_TASK_PRIORITY, &uiTaskH);
+
+    if(xReturned == pdFAIL){
+
+        ESP_LOGE(UI_TASK_TAG, "Failed to create task.");
+
+        while(true){
+
+        }
+    }
+
 
 }
 
 static void uiTask(void *pvParameters){
+
+    uint16_t uiSwitches = 0;
+
+    setLcdFunction(true, false, false);
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    setLcdOptions(true, false, false);
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    setLcdEntryMode(true, false);
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    clearLcdScreen();
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    write2LCD("Open Colibri V0.00 2023", 23);
+
+    for(size_t i = 0; i < 7; i++) {
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        setLcdCursorOrShift(true, false);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    setLcdCursor2Home();
+
+
+    while(true){
+
+        updateUI(&uiSwitches);
+       
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+
 }
