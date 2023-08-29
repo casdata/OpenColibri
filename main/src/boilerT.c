@@ -60,7 +60,22 @@ static void readTemp(float *thermTemp){
         temp = (1.0f / (thermA + (thermB * temp + (thermC * temp * temp * temp))));
         temp -= 273.15f;
 
+        *thermTemp = temp;
     }
+}
+
+static void wait4Control(){
+    uint32_t ulNotifiedValue = 0;
+    bool onWait = true;
+
+    do{
+
+        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+        if((ulNotifiedValue & 0x04) >> 2)
+            onWait = false;
+
+    }while(onWait);
 
 }
 
@@ -80,13 +95,18 @@ void initBoilerTask(){
 
 static void boilerTask(void *pvParameters){
 
+    float thermistorTemp = 0;
+
+    wait4Control();
+
+    //xTaskNotify(controlTaskH, 0x04, eSetBits);              //Notify control task that is ready
+    ESP_LOGI(BOILER_TASK_TAG, "ONLINE");
+
     while(1){
-
-
-        float thermistorTemp = 0;
 
         readTemp(&thermistorTemp);
 
+        xQueueOverwrite(xQueueBoilerTemp, (void *) &thermistorTemp);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

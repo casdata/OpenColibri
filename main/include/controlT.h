@@ -4,11 +4,12 @@
 #include "extend.h"
 #include "boilerT.h"
 #include "interruptsT.h"
+#include "uiT.h"
 
 typedef enum{
     IDLE_C,
     MAINTENANCE_C,
-    CLEANING_C,
+    CLEAN_C,
     DRINK_1_C,
     DRINK_2_C,
     DRINK_3_C,
@@ -31,6 +32,8 @@ static void resetRelay(uint8_t *byteData, const OutputRelays outputRelays);
 static void resetPulseCount();
 static void checkAirBreak(uint8_t *dataBytes);
 static void waitMachine2Start(uint8_t *dataBytes);
+static void startBoilerTask();
+static void syncronizeAllTasks();
 
 void initI2C_MCP23017_Out();
 void initI2C_MCP23017_In();

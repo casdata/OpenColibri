@@ -8,6 +8,7 @@
 QueueHandle_t xQueueIntB = NULL;
 QueueHandle_t xQueueInputsSw = NULL;
 QueueHandle_t xQueueInputPulse = NULL;
+QueueHandle_t xQueueBoilerTemp = NULL;
 
 
 static void IRAM_ATTR interrupt_handler(void *args){
@@ -21,6 +22,7 @@ static void initQueues(){
     xQueueIntB = xQueueCreate(10, sizeof(int16_t));
     xQueueInputsSw = xQueueCreate(1, sizeof(InputSwStruct));
     xQueueInputPulse = xQueueCreate(1, sizeof(uint16_t));
+    xQueueBoilerTemp = xQueueCreate(1, sizeof(float));
 
     if(xQueueIntB == NULL)
         ESP_LOGE(MAIN_TASK_TAG, "xQueueIntB initialization error!");
@@ -30,6 +32,9 @@ static void initQueues(){
 
     if(xQueueInputPulse == NULL)
         ESP_LOGE(MAIN_TASK_TAG, "xQueueInputPulse initialization error!");
+
+    if(xQueueBoilerTemp == NULL)
+        ESP_LOGE(MAIN_TASK_TAG, "xQueueBoilerTemp initialization error!");
 
 }
 

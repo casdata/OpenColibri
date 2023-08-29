@@ -76,6 +76,14 @@ static void sendData2LCD(const uint8_t dataByte, const bool rW, const bool rs){
     }
 }
 
+static void fullClearLcdScreen(){
+    clearLcdScreen();
+    vTaskDelay(pdMS_TO_TICKS(30));
+
+    setLcdCursor2Home();
+    vTaskDelay(pdMS_TO_TICKS(30));
+}
+
 static void clearLcdScreen(){
     sendData2LCD(0b00000001, 0, 0);
 }
@@ -236,6 +244,11 @@ static void setLcdPos(const uint8_t x){
 }
 
 
+static void getBoilerTemp(float *temperature){
+    xQueuePeek(xQueueBoilerTemp, temperature, pdMS_TO_TICKS(60));
+}
+
+
 void updateUI(uint16_t *uiSwitches){
 
     
@@ -297,6 +310,190 @@ void updateUI(uint16_t *uiSwitches){
                                                             
 }
 
+static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiState, ErrorCode *errorCode){
+    uint32_t ulNotifiedValue = 0;
+
+    if(xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, pdMS_TO_TICKS(15) == pdPASS)){
+
+        if(ulNotifiedValue & 0x001){
+            ESP_LOGW(UI_TASK_TAG, "Clear Error Notification");
+            
+            
+            if(*previousUiState == BOOTING_UI){
+                *previousUiState = ERROR_UI;
+                *currentUiState = BOOTING_UI; 
+
+                fullClearLcdScreen();
+            }
+        
+
+            *errorCode = NONE;
+        }
+
+        if((ulNotifiedValue & 0x002) >> 1){
+            ESP_LOGE(UI_TASK_TAG, "AIR BREAK ERROR NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = ERROR_UI;
+
+            *errorCode = NO_WATER;
+        }
+
+        if((ulNotifiedValue & 0x004) >> 2){
+            ESP_LOGE(UI_TASK_TAG, "COFFEE ERROR NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = ERROR_UI;
+
+            *errorCode = NO_COFFEE;
+        }
+
+        if((ulNotifiedValue & 0x008) >> 3){
+            ESP_LOGE(UI_TASK_TAG, "BREWER ERROR NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = ERROR_UI;
+
+            *errorCode = BREWER_ISSUE;
+        }
+
+        if((ulNotifiedValue & 0x010) >> 4){
+            ESP_LOGW(UI_TASK_TAG, "idleState NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = IDLE_UI;
+        }
+
+        if((ulNotifiedValue & 0x020) >> 5){
+            ESP_LOGW(UI_TASK_TAG, "bootingState NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = BOOTING_UI;
+        }
+
+        if((ulNotifiedValue & 0x040) >> 6){
+            ESP_LOGW(UI_TASK_TAG, "maintenanceState NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = MAINTENANCE_UI;
+        }
+
+        if((ulNotifiedValue & 0x080) >> 7){
+            ESP_LOGW(UI_TASK_TAG, "cleanState NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = CLEAN_UI;
+        }
+
+        if((ulNotifiedValue & 0x100) >> 8){
+            ESP_LOGW(UI_TASK_TAG, "prepareDrinkState NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = PREPARE_DRINK_UI;
+
+        }
+        
+
+    }
+}
+
+
+static void inBootingCodeState(float *bTemperature){
+
+    float newBoilerTemp = 0;
+
+    getBoilerTemp(&newBoilerTemp);
+
+    if(newBoilerTemp != *bTemperature){
+
+        char *strTemperature = (char *) malloc(16);
+        
+        memset(strTemperature, 0, 16);
+
+        sprintf(strTemperature, "%.2f", newBoilerTemp);
+    
+
+        fullClearLcdScreen();
+
+        write2LCD("Boiler: ", 8);
+
+        write2LCD(strTemperature, strlen(strTemperature));
+
+        sendData2LCD(0b11011111, 0, 1);     
+        sendData2LCD(0b01000011, 0, 1);   
+
+        free(strTemperature);
+    }
+
+}
+
+
+static void inErrorCodeState(const ErrorCode errorCode){
+
+    static int blinkCount = 0;
+    static bool showMessage = true;
+
+    bool updateLcd = false;
+
+    blinkCount++;
+
+    if(showMessage){
+        if(blinkCount > 4){
+            updateLcd = true;
+            showMessage = false;
+        }
+    }
+    else{
+        if(blinkCount > 1){
+            updateLcd = true;
+            showMessage = true;
+        }
+    }
+
+    if(updateLcd){
+        blinkCount = 0;
+
+        fullClearLcdScreen();
+    }
+
+    if(showMessage){
+        switch(errorCode){
+            case NO_WATER:
+                write2LCD("  E01: NO WATER ", 15);
+            break;
+            case NO_COFFEE:
+                write2LCD(" E02: NO COFFEE", 15);
+            break;
+            case BREWER_ISSUE:
+                write2LCD("  E03: BREWER", 13);
+            break;
+            case NONE:
+                write2LCD("----------------", 16);
+            break;
+        }
+    }
+
+}
+
+
+static void initLcd(){
+    setLcdFunction(true, false, false);
+
+    vTaskDelay(pdMS_TO_TICKS(30));
+
+    setLcdOptions(true, false, false);
+
+    vTaskDelay(pdMS_TO_TICKS(30));
+
+    setLcdEntryMode(true, false);
+
+    vTaskDelay(pdMS_TO_TICKS(30));
+
+    clearLcdScreen();
+
+    vTaskDelay(pdMS_TO_TICKS(30));
+}
+
 
 void initUiTask(){
     BaseType_t xReturned = xTaskCreate(uiTask, "ui_task", UI_TASK_SIZE, (void *)NULL, UI_TASK_PRIORITY, &uiTaskH);
@@ -316,41 +513,47 @@ void initUiTask(){
 static void uiTask(void *pvParameters){
 
     uint16_t uiSwitches = 0;
+    float bTemp = 0;                            //boiler temperature
+    UiState currentUiState = BOOTING_UI;
+    UiState previousUiState = BOOTING_UI;
 
-    setLcdFunction(true, false, false);
+    ErrorCode errorCode = NONE;
 
-    vTaskDelay(pdMS_TO_TICKS(200));
+    initLcd();
+    write2LCD("OpenColibri V001", 16);
 
-    setLcdOptions(true, false, false);
 
-    vTaskDelay(pdMS_TO_TICKS(200));
-
-    setLcdEntryMode(true, false);
-
-    vTaskDelay(pdMS_TO_TICKS(200));
-
-    clearLcdScreen();
-
-    vTaskDelay(pdMS_TO_TICKS(200));
-
-    write2LCD("Open Colibri V0.00 2023", 23);
-
-    for(size_t i = 0; i < 7; i++) {
-
-        vTaskDelay(pdMS_TO_TICKS(1000));
-
-        setLcdCursorOrShift(true, false);
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    setLcdCursor2Home();
-
+    //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
+    ESP_LOGI(UI_TASK_TAG, "ONLINE");
 
     while(true){
 
+        checkNotifications4Ui(&previousUiState, &currentUiState, &errorCode);
+
         updateUI(&uiSwitches);
+
+        switch(currentUiState){
+            case IDLE_UI:
+
+            break;
+            case BOOTING_UI:
+                inBootingCodeState(&bTemp);
+            break;
+            case MAINTENANCE_UI:
+
+            break;
+            case CLEAN_UI:
+
+            break;
+            case PREPARE_DRINK_UI:
+
+            break;
+            case ERROR_UI:
+                inErrorCodeState(errorCode);
+            break;
+        }
        
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 
 

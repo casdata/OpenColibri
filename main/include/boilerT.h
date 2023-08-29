@@ -6,6 +6,7 @@
 #define OPENCOLIBRI_BOILERT_H
 
 #include "extend.h"
+#include "controlT.h"
 
 extern TaskHandle_t boilerTaskH;
 
@@ -39,6 +40,7 @@ static float thermC =  1.009595903e-7;
 
 static bool readMCP3421_ADC(uint16_t *adcValue);
 static void readTemp(float *thermTemp);
+static void wait4Control();
 
 void initBoilerTask();
 static void boilerTask(void *pvParameters);

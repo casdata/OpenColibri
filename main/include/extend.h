@@ -83,6 +83,13 @@ typedef enum {
     CUP_SENSOR_SW               //GPB5 / IVB_SW
 } SensorSw;
 
+typedef enum {
+    NONE,
+    NO_WATER,
+    NO_COFFEE,
+    BREWER_ISSUE
+} ErrorCode;
+
 typedef struct InputBoolStruct{
     bool    wasteOverflowSw;
     bool    coffeeBrewerSw;
@@ -114,6 +121,7 @@ typedef struct OutputBoolStruct{
 extern QueueHandle_t xQueueIntB;
 extern QueueHandle_t xQueueInputsSw;
 extern QueueHandle_t xQueueInputPulse;
+extern QueueHandle_t xQueueBoilerTemp;
 
 
 #endif //OPENCOLIBRI_EXTEND_H

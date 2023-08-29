@@ -182,6 +182,8 @@ static void checkAirBreak(uint8_t *dataBytes){
     InputSwStruct inputSwStruct;    
 
     bool doCheck = true;
+    bool onError = false;
+    int8_t count2Error = 0;
 
     do{
         if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
@@ -210,12 +212,51 @@ static void checkAirBreak(uint8_t *dataBytes){
 
         }
 
+        vTaskDelay(pdMS_TO_TICKS(400));
+
+        if(!onError && (++count2Error > 18)){                            //after 8280 mS send erro message to ui
+            onError = true;
+            xTaskNotify(uiTaskH, 0x02, eSetBits); 
+        }
+
     }while(doCheck);
+
+    if(onError)
+        xTaskNotify(uiTaskH, 0x01, eSetBits);
 
 }
 
 static void waitMachine2Start(uint8_t *dataBytes){
-    void checkAirBreak(outputRlyStruct);
+    checkAirBreak(dataBytes);
+
+}
+
+static void startBoilerTask(){
+    xTaskNotify(boilerTaskH, 0x04, eSetBits);         
+}
+
+static void syncronizeAllTasks(){
+    uint32_t ulNotifiedValue = 0;
+    bool uiT_off = true;            //ui task
+    bool inT_off = true;            //interrupts task
+    bool boT_off = true;            //boiler task
+
+
+    do{
+        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+        if(ulNotifiedValue & 0x01)
+            uiT_off = false;
+
+        if((ulNotifiedValue & 0x02) >> 1)
+            inT_off = false;
+
+        if((ulNotifiedValue & 0x04) >> 2)
+            boT_off = false;
+
+
+    }while(uiT_off || inT_off || boT_off);
+
 
 }
 
@@ -275,7 +316,15 @@ static void controlTask(void *pvParameters){
 
     memset(outputIO_Buff, 0, 2);
 
-    waitMachine2Start(outputIO_Buff);
+    checkAirBreak(outputIO_Buff);
+
+    startBoilerTask();
+
+    xTaskNotify(uiTaskH, 0x020, eSetBits);                  //Set ui task to booting state
+    //syncronizeAllTasks();
+
+    ESP_LOGI(CONTROL_TASK_TAG, "ONLINE");
+
 
     while(true){
 
@@ -286,7 +335,7 @@ static void controlTask(void *pvParameters){
             case MAINTENANCE_C:
 
             break;
-            case CLEANING_C:
+            case CLEAN_C:
 
             break;
             case DRINK_1_C:

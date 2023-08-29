@@ -2,6 +2,20 @@
 
 TaskHandle_t intTaskH = NULL;
 
+
+static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff){
+    readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, iBuff, 1);
+
+    inputStruct->wasteOverflowSw  = readSW(iBuff, WASTE_OVERFLOW_SW);
+    inputStruct->coffeeBrewerSw = readSW(iBuff, COFFEE_BREWER_SW);
+    inputStruct->airBreakSw = readSW(iBuff, AIR_BREAK_SW);
+    inputStruct->coffeeReleaseSw = readSW(iBuff, COFFEE_RELEASE_MOTOR_CAM);
+    inputStruct->cupReleaseSw = readSW(iBuff, CUP_RELEASE_SW);
+    inputStruct->cupSensorSw = readSW(iBuff, CUP_SENSOR_SW);
+
+    xQueueOverwrite(xQueueInputsSw, (void *) inputStruct);
+}
+
 static void check4Notifications(uint16_t *ptrCount){
     uint32_t ulNotifiedValue = 0;
 
@@ -64,6 +78,12 @@ static void interruptsTask(void *pvParameters){
 
     inputIO_Buff = (uint8_t *)malloc(1);
 
+    //xTaskNotify(controlTaskH, 0x02, eSetBits);              //Notify control task that is ready
+    ESP_LOGI(INTERRUPTS_TASK_TAG, "ONLINE");
+
+    xQueueOverwrite(xQueueInputPulse, (void *) &count);
+    readInputSws(&inputSwStruct, inputIO_Buff);
+
     while(1){
 
         check4Notifications(&count);
@@ -77,16 +97,7 @@ static void interruptsTask(void *pvParameters){
                 break;
                 case MCP23017_INTB_PIN:
 
-                    readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, inputIO_Buff, 1);
-
-                    inputSwStruct.wasteOverflowSw  = readSW(inputIO_Buff, WASTE_OVERFLOW_SW);
-                    inputSwStruct.coffeeBrewerSw = readSW(inputIO_Buff, COFFEE_BREWER_SW);
-                    inputSwStruct.airBreakSw = readSW(inputIO_Buff, AIR_BREAK_SW);
-                    inputSwStruct.coffeeReleaseSw = readSW(inputIO_Buff, COFFEE_RELEASE_MOTOR_CAM);
-                    inputSwStruct.cupReleaseSw = readSW(inputIO_Buff, CUP_RELEASE_SW);
-                    inputSwStruct.cupSensorSw = readSW(inputIO_Buff, CUP_SENSOR_SW);
-
-                    xQueueOverwrite(xQueueInputsSw, (void *) &inputSwStruct);
+                    readInputSws(&inputSwStruct, inputIO_Buff);
 
                     /*
                     ESP_LOGE(ALTERNATIVE_TASK_TAG, "Read it!!");
