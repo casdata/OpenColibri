@@ -406,6 +406,8 @@ static void inBootingCodeState(float *bTemperature){
 
     if(newBoilerTemp != *bTemperature){
 
+        *bTemperature = newBoilerTemp;
+
         char *strTemperature = (char *) malloc(16);
         
         memset(strTemperature, 0, 16);
@@ -413,9 +415,7 @@ static void inBootingCodeState(float *bTemperature){
         sprintf(strTemperature, "%.2f", newBoilerTemp);
     
 
-        fullClearLcdScreen();
-
-        write2LCD("Boiler: ", 8);
+        setLcdPos(8);
 
         write2LCD(strTemperature, strlen(strTemperature));
 
@@ -514,14 +514,14 @@ static void uiTask(void *pvParameters){
 
     uint16_t uiSwitches = 0;
     float bTemp = 0;                            //boiler temperature
-    UiState currentUiState = BOOTING_UI;
-    UiState previousUiState = BOOTING_UI;
+    UiState currentUiState = IDLE_UI;
+    UiState previousUiState = IDLE_UI;
 
     ErrorCode errorCode = NONE;
 
     initLcd();
     write2LCD("OpenColibri V001", 16);
-
+    vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
     ESP_LOGI(UI_TASK_TAG, "ONLINE");
@@ -537,6 +537,13 @@ static void uiTask(void *pvParameters){
 
             break;
             case BOOTING_UI:
+                if(previousUiState != BOOTING_UI){
+                    previousUiState = currentUiState;
+
+                    fullClearLcdScreen();
+                    write2LCD("Boiler: ", 8);
+                }
+
                 inBootingCodeState(&bTemp);
             break;
             case MAINTENANCE_UI:
@@ -553,7 +560,7 @@ static void uiTask(void *pvParameters){
             break;
         }
        
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));//500
     }
 
 

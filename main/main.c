@@ -79,7 +79,7 @@ static void initGPIO(){
     gpio_set_level(MCP23017_IN_RS_PIN, 1);
     gpio_set_level(MCP23017_OUT_RS_PIN, 1);
     gpio_set_level(BOILER_PIN, 0);
-    gpio_set_level(STATUS_LED_PIN, 0);
+    //gpio_set_level(STATUS_LED_PIN, 0);
 }
 
 static void initI2C(){
@@ -101,6 +101,35 @@ static void initI2C(){
 
 }
 
+static void initLEDC(){
+
+    ledc_timer_config_t ledcConfig = {
+        .speed_mode       = LEDC_LOW_SPEED_MODE,
+        .timer_num        = LEDC_TIMER_0,
+        .duty_resolution  = LEDC_TIMER_13_BIT,
+        .freq_hz          = 1000,
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+
+    ESP_ERROR_CHECK(ledc_timer_config(&ledcConfig));
+
+    ledc_channel_config_t ledcChannel = {
+        .speed_mode     = LEDC_MODE,
+        .channel        = LEDC_CHANNEL,
+        .timer_sel      = LEDC_TIMER,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = STATUS_LED_PIN,
+        .duty           = 0, // Set duty to 0%
+        .hpoint         = 0
+    };
+
+    ESP_ERROR_CHECK(ledc_channel_config(&ledcChannel));
+
+}
+
+static void initPID(){
+    
+}
 
 void app_main(void)
 {
@@ -109,6 +138,8 @@ void app_main(void)
 
     initGPIO();
     initI2C();
+    initLEDC();
+    initPID();
 
     initI2C_MCP23017_Out();
     initI2C_MCP23017_In();

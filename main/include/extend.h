@@ -13,8 +13,10 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
+#include "driver/ledc.h"
 #include "esp_log.h"
 #include "math.h"
+#include "pid_ctrl.h"
 
 #define CONTROL_TASK_SIZE           4096
 #define CONTROL_TASK_PRIORITY       5
@@ -36,6 +38,12 @@
 #define IN_SERIAL_UI_PIN    GPIO_NUM_35
 #define RCK_DISPLAY_PIN     GPIO_NUM_25
 #define SER_DISPLAY_PIN     GPIO_NUM_26
+
+#define LEDC_TIMER              LEDC_TIMER_0
+#define LEDC_MODE               LEDC_LOW_SPEED_MODE
+#define LEDC_CHANNEL            LEDC_CHANNEL_0
+#define LEDC_DUTY_RES           LEDC_TIMER_13_BIT // Set duty resolution to 13 bits
+#define LEDC_FREQUENCY          5000 // Frequency in Hertz. Set frequency at 5 kHz
 
 #define I2C_SCL_PIN         GPIO_NUM_22
 #define I2C_SDA_PIN         GPIO_NUM_21

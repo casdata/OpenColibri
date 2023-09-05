@@ -45,7 +45,7 @@ static bool readMCP3421_ADC(uint16_t *adcValue){
 }
 
 
-static void readTemp(float *thermTemp){
+static void readTemp(BoilerStructData *boilerStructData){
     uint16_t adcValue;
 
     if(readMCP3421_ADC(&adcValue)){
@@ -60,9 +60,44 @@ static void readTemp(float *thermTemp){
         temp = (1.0f / (thermA + (thermB * temp + (thermC * temp * temp * temp))));
         temp -= 273.15f;
 
-        *thermTemp = temp;
+        //*thermTemp = temp;
+        boilerStructData->thermistorTemp = temp;
     }
 }
+
+static void innerBoilerControl(BoilerStructData *boilerStructData){
+    if(boilerStructData->boilerIsOn){
+
+
+        switch(boilerStructData->boilerStateMode){
+            case B_OVERDRIVE_MODE:
+
+            break;
+            case B_NORMAL_MODE:
+
+
+
+            break;
+            case B_NORMAL_2_OVERDRIVE:
+                boilerStructData->boilerStateMode = B_OVERDRIVE_MODE;
+                //gpio_set_level(STATUS_LED_PIN, 1);
+            break;
+            case B_OVERDRIVE_2_NORMAL:
+                boilerStructData->boilerStateMode = B_NORMAL_MODE;
+                //gpio_set_level(STATUS_LED_PIN, 0);
+            break;
+        }
+        
+    }
+    else{
+        if(boilerStructData->boilerState){
+            boilerStructData->boilerState = false;
+            //gpio_set_level(STATUS_LED_PIN, 0);
+        }
+    }
+}
+
+
 
 static void wait4Control(){
     uint32_t ulNotifiedValue = 0;
@@ -78,6 +113,41 @@ static void wait4Control(){
     }while(onWait);
 
 }
+
+
+static void checkNotifications4Boiler(BoilerStructData *boilerStructData){
+    uint32_t ulNotifiedValue = 0;
+
+    if(xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, pdMS_TO_TICKS(15) == pdPASS)){
+        if(ulNotifiedValue & 0x001){
+            ESP_LOGW(UI_TASK_TAG, "Boiler Ready NOTIFICATION");
+            
+        }
+
+        if((ulNotifiedValue & 0x002) >> 1){
+            ESP_LOGW(UI_TASK_TAG, "Turn Boiler Off NOTIFICATION");
+
+        }
+
+        if((ulNotifiedValue & 0x004) >> 2){
+            ESP_LOGW(UI_TASK_TAG, "Turn Boiler On NOTIFICATION");
+
+        }
+
+        if((ulNotifiedValue & 0x008) >> 3){
+            ESP_LOGW(UI_TASK_TAG, "Set Boiler Normal Mode NOTIFICATION");
+            boilerStructData->boilerStateMode = B_OVERDRIVE_2_NORMAL;
+        }
+
+        if((ulNotifiedValue & 0x010) >> 4){
+            ESP_LOGW(UI_TASK_TAG, "Set Boiler Overdrive Mode NOTIFICATION");
+            boilerStructData->boilerStateMode = B_NORMAL_2_OVERDRIVE;
+        }
+    }
+
+
+}
+
 
 void initBoilerTask(){
     BaseType_t xReturned = xTaskCreatePinnedToCore(boilerTask, "boiler_task", BOILER_TASK_SIZE, (void *)NULL, BOILER_TASK_PRIORITY, &boilerTaskH, 1);
@@ -95,7 +165,7 @@ void initBoilerTask(){
 
 static void boilerTask(void *pvParameters){
 
-    float thermistorTemp = 0;
+    BoilerStructData boilerStructData = {true, false, B_NORMAL_MODE, 0.0f};
 
     wait4Control();
 
@@ -103,10 +173,13 @@ static void boilerTask(void *pvParameters){
     ESP_LOGI(BOILER_TASK_TAG, "ONLINE");
 
     while(1){
+        checkNotifications4Boiler(&boilerStructData);
 
-        readTemp(&thermistorTemp);
+        readTemp(&boilerStructData);
 
-        xQueueOverwrite(xQueueBoilerTemp, (void *) &thermistorTemp);
+        innerBoilerControl(&boilerStructData);
+
+        xQueueOverwrite(xQueueBoilerTemp, (void *) &boilerStructData.thermistorTemp);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

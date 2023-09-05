@@ -38,9 +38,27 @@ static float thermC =  1.009595903e-7;
  */
 
 
+typedef enum{
+    B_NORMAL_MODE = 0,
+    B_NORMAL_2_OVERDRIVE,
+    B_OVERDRIVE_MODE,
+    B_OVERDRIVE_2_NORMAL
+} BoilerStateMode;
+
+
+typedef struct BoilerBoolStruct{
+    bool boilerIsOn;
+    bool boilerState;
+    BoilerStateMode boilerStateMode;
+    float thermistorTemp;
+} BoilerStructData;
+
+
 static bool readMCP3421_ADC(uint16_t *adcValue);
-static void readTemp(float *thermTemp);
+static void readTemp(BoilerStructData *boilerStructData);
+static void innerBoilerControl(BoilerStructData *boilerStructData);
 static void wait4Control();
+static void checkNotifications4Boiler(BoilerStructData *boilerStructData);
 
 void initBoilerTask();
 static void boilerTask(void *pvParameters);

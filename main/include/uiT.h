@@ -9,7 +9,7 @@
 #include "controlT.h"
 
 typedef enum{
-    IDLE_UI,
+    IDLE_UI = 0,
     BOOTING_UI,
     MAINTENANCE_UI,
     CLEAN_UI,
