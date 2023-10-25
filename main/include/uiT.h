@@ -19,6 +19,7 @@ typedef enum{
 
 
 extern TaskHandle_t uiTaskH;
+extern uint8_t lcdMemPos;
 
 static int getBit2Word(const uint8_t *word, int8_t position);
 static void setBit2Word(uint16_t *word, int bitValue, int8_t position);
@@ -32,8 +33,8 @@ static void setLcdCursorOrShift(const bool displayShift, const bool rightShift);
 static void setLcdFunction(const bool bitDL, const bool bitN, const bool bitF);
 static void setLcdCGRAM_addr(uint8_t addr);
 static void setLcdDDRAM_addr(uint8_t addr);
-static void write2LCD(const char *dataStr, const uint8_t dataStrLength);
-static void setLcdPos(const uint8_t x);
+static void write2LCD(const char *dataStr, const uint8_t dataStrLength, const uint8_t pos);
+static void setLcdPos(uint8_t x);
 static void getBoilerTemp(float *temperature);
 static void updateUI(uint16_t *uiSwitches);
 static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiState, ErrorCode *errorCode);

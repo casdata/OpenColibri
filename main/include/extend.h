@@ -10,6 +10,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "esp_bt_defs.h"
+#include "esp_bt.h"
+#include "esp_bt_main.h"
+#include "esp_bt_device.h"
+#include "esp_gap_bt_api.h"
+#include "esp_spp_api.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
@@ -17,6 +25,10 @@
 #include "esp_log.h"
 #include "math.h"
 #include "pid_ctrl.h"
+
+#define BT_DEVICE_NAME "OpenColibri_BT"
+#define SPP_SERVER_1 "BT_SPP_SERVER"
+#define CLIENT_NAME_MAX 10
 
 #define CONTROL_TASK_SIZE           4096
 #define CONTROL_TASK_PRIORITY       5
@@ -26,6 +38,8 @@
 #define INTERRUPTS_TASK_PRIORITY    5
 #define BOILER_TASK_SIZE            2048
 #define BOILER_TASK_PRIORITY        4
+#define BT_TASK_SIZE                2048
+#define BT_TASK_PRIORITY            6
 
 #define STATUS_LED_PIN      GPIO_NUM_2
 #define BOILER_PIN          GPIO_NUM_27
@@ -39,11 +53,17 @@
 #define RCK_DISPLAY_PIN     GPIO_NUM_25
 #define SER_DISPLAY_PIN     GPIO_NUM_26
 
-#define LEDC_TIMER              LEDC_TIMER_0
-#define LEDC_MODE               LEDC_LOW_SPEED_MODE
-#define LEDC_CHANNEL            LEDC_CHANNEL_0
-#define LEDC_DUTY_RES           LEDC_TIMER_13_BIT // Set duty resolution to 13 bits
-#define LEDC_FREQUENCY          5000 // Frequency in Hertz. Set frequency at 5 kHz
+#define TXD_2_PIN           GPIO_NUM_17
+#define RXD_2_PIN           GPIO_NUM_16
+#define UART_PORT_N         UART_NUM_2   
+#define BUFF_SIZE           1024
+#define NEXTION_D_CHAR      0x7E
+
+#define LEDC_TIMER          LEDC_TIMER_0
+#define LEDC_MODE           LEDC_LOW_SPEED_MODE
+#define LEDC_CHANNEL        LEDC_CHANNEL_0
+#define LEDC_DUTY_RES       LEDC_TIMER_13_BIT // Set duty resolution to 13 bits
+#define LEDC_FREQUENCY      5000 // Frequency in Hertz. Set frequency at 5 kHz
 
 #define I2C_SCL_PIN         GPIO_NUM_22
 #define I2C_SDA_PIN         GPIO_NUM_21
@@ -65,6 +85,7 @@
 #define INTERRUPTS_TASK_TAG     "INTERRUPTS_T"
 #define UI_TASK_TAG             "UI_TASK_T"
 #define BOILER_TASK_TAG         "BOILER_TASK_T"
+#define BT_TASK_TAG             "BT_TASK_T"
 
 typedef enum {
     SOLENOID_VALVE_2 = 0,   //RELAY 1 / GPB6 / O.5 BOILER 3 WAY-VALVE FAR
@@ -130,6 +151,7 @@ extern QueueHandle_t xQueueIntB;
 extern QueueHandle_t xQueueInputsSw;
 extern QueueHandle_t xQueueInputPulse;
 extern QueueHandle_t xQueueBoilerTemp;
+extern QueueHandle_t xQueueSpp;
 
 
 #endif //OPENCOLIBRI_EXTEND_H

@@ -9,6 +9,7 @@
 #include "controlT.h"
 
 extern TaskHandle_t boilerTaskH;
+extern QueueHandle_t xQueueUart;
 
 /*
 static float thermA =  0.6989527046e-3;              //Calculated Stainhart-Hart model coefficients
@@ -45,12 +46,25 @@ typedef enum{
     B_OVERDRIVE_2_NORMAL
 } BoilerStateMode;
 
+typedef enum{
+    P_DATA = 0,
+    I_DATA,
+    D_DATA,
+    S_DATA
+} NextionData;
+
 
 typedef struct BoilerBoolStruct{
     bool boilerIsOn;
     bool boilerState;
+    bool toSend;                            //Used for nextion pid tunner, true = thermistorTemp; false = setPoint
     BoilerStateMode boilerStateMode;
     float thermistorTemp;
+    uint16_t setPoint;
+    uint16_t boilerDuty;
+    float kP;
+    float kI;
+    float kD;
 } BoilerStructData;
 
 
@@ -59,6 +73,8 @@ static void readTemp(BoilerStructData *boilerStructData);
 static void innerBoilerControl(BoilerStructData *boilerStructData);
 static void wait4Control();
 static void checkNotifications4Boiler(BoilerStructData *boilerStructData);
+static void getMessage2Send2Nextion(char *strData, BoilerStructData *boilerStructData);
+static bool checkDataFromNextionPID_Tunner(BoilerStructData *boilerStructData, pid_ctrl_config_t *pidConfig);
 
 void initBoilerTask();
 static void boilerTask(void *pvParameters);

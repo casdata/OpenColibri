@@ -310,8 +310,6 @@ void initControlTask(){
 
 static void controlTask(void *pvParameters){
 
-    int pwmTest = 0;
-
     float boilerT = 0;
     ControlState controlState = IDLE_C;
 
@@ -366,27 +364,6 @@ static void controlTask(void *pvParameters){
 
             break;
         }
-
-        if(pwmTest < 15){
-            ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 2048));
-            ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
-        }
-        else if(pwmTest < 30){
-            ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 4096));
-            ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
-        }
-        else if(pwmTest < 45){
-            ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 6144));
-            ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
-        }
-        else if(pwmTest < 60){
-            ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 8192));
-            ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
-        }
-        else
-            pwmTest = 0;
-
-        pwmTest++;
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }

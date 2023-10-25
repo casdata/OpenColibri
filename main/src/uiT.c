@@ -4,6 +4,7 @@
 #include "../include/uiT.h"
 
 TaskHandle_t uiTaskH = NULL;
+uint8_t lcdMemPos = 0;
 
 static int getBit2Word(const uint8_t *word, int8_t position){
     int bitValue = *word >> position;
@@ -90,6 +91,7 @@ static void clearLcdScreen(){
 
 static void setLcdCursor2Home(){
     sendData2LCD(0b00000010, 0, 0);
+    lcdMemPos = 0;
 }
 
 /*  setLcdEntryMode
@@ -225,21 +227,30 @@ static void setLcdDDRAM_addr(uint8_t addr){
 }
 
 
-static void write2LCD(const char *dataStr, const uint8_t dataStrLength){
+static void write2LCD(const char *dataStr, const uint8_t dataStrLength, const uint8_t pos){
+
+    setLcdPos(pos);
 
     for(size_t i = 0; i < dataStrLength; i++){
 
         sendData2LCD(*(dataStr + i), 0, 1);
-
         vTaskDelay(pdMS_TO_TICKS(5));
-    }
 
-    //sendData2LCD(0b01010111, 0, 1);             //Write 'W'
+        if(lcdMemPos++ == 7)
+            setLcdPos(8);
+
+    }
 
 }
 
 
-static void setLcdPos(const uint8_t x){
+static void setLcdPos(uint8_t x){
+
+    if(x > 7)
+        x += 56;
+
+    lcdMemPos = x;
+
     setLcdDDRAM_addr(x);
 }
 
@@ -336,6 +347,8 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
             *previousUiState = *currentUiState;
             *currentUiState = ERROR_UI;
 
+            fullClearLcdScreen();
+
             *errorCode = NO_WATER;
         }
 
@@ -345,6 +358,8 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
             *previousUiState = *currentUiState;
             *currentUiState = ERROR_UI;
 
+            fullClearLcdScreen();
+
             *errorCode = NO_COFFEE;
         }
 
@@ -353,6 +368,8 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
 
             *previousUiState = *currentUiState;
             *currentUiState = ERROR_UI;
+
+            fullClearLcdScreen();
 
             *errorCode = BREWER_ISSUE;
         }
@@ -415,12 +432,12 @@ static void inBootingCodeState(float *bTemperature){
         sprintf(strTemperature, "%.2f", newBoilerTemp);
     
 
-        setLcdPos(8);
+        write2LCD(strTemperature, strlen(strTemperature), 8);
 
-        write2LCD(strTemperature, strlen(strTemperature));
-
-        sendData2LCD(0b11011111, 0, 1);     
+        sendData2LCD(0b11011111, 0, 1);    
+        lcdMemPos++; 
         sendData2LCD(0b01000011, 0, 1);   
+        lcdMemPos++;
 
         free(strTemperature);
     }
@@ -459,16 +476,16 @@ static void inErrorCodeState(const ErrorCode errorCode){
     if(showMessage){
         switch(errorCode){
             case NO_WATER:
-                write2LCD("  E01: NO WATER ", 15);
+                write2LCD("  E01: NO WATER ", 15, 0);
             break;
             case NO_COFFEE:
-                write2LCD(" E02: NO COFFEE", 15);
+                write2LCD(" E02: NO COFFEE", 15, 0);
             break;
             case BREWER_ISSUE:
-                write2LCD("  E03: BREWER", 13);
+                write2LCD("  E03: BREWER", 13, 0);
             break;
             case NONE:
-                write2LCD("----------------", 16);
+                write2LCD("----------------", 16, 0);
             break;
         }
     }
@@ -477,7 +494,7 @@ static void inErrorCodeState(const ErrorCode errorCode){
 
 
 static void initLcd(){
-    setLcdFunction(true, false, false);
+    setLcdFunction(true, true, false);
 
     vTaskDelay(pdMS_TO_TICKS(30));
 
@@ -520,7 +537,7 @@ static void uiTask(void *pvParameters){
     ErrorCode errorCode = NONE;
 
     initLcd();
-    write2LCD("OpenColibri V001", 16);
+    write2LCD("OpenColibri V001", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
@@ -541,7 +558,7 @@ static void uiTask(void *pvParameters){
                     previousUiState = currentUiState;
 
                     fullClearLcdScreen();
-                    write2LCD("Boiler: ", 8);
+                    write2LCD("Boiler: ", 8, 0);
                 }
 
                 inBootingCodeState(&bTemp);
