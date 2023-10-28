@@ -3,6 +3,91 @@
 
 TaskHandle_t controlTaskH = NULL;
 
+void runDrink1(uint8_t *dataBytes){
+
+    grindAndDeliver(dataBytes);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    setBrewer2InjectPosition(dataBytes);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    xTaskNotify(boilerTaskH, 0x10, eSetBits);
+    injecBrewerWater(dataBytes, 142);
+    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+
+    vTaskDelay(pdMS_TO_TICKS(2500));
+
+    setBrewer2StartPosition(dataBytes);  
+
+}
+
+void runDrink2(uint8_t *dataBytes){
+
+    grindAndDeliver(dataBytes);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    setBrewer2InjectPosition(dataBytes);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    xTaskNotify(boilerTaskH, 0x10, eSetBits);
+    injecBrewerWater(dataBytes, 78);
+    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+
+    vTaskDelay(pdMS_TO_TICKS(2500));
+
+    setBrewer2StartPosition(dataBytes);  
+      
+
+}
+
+void runDrink3(uint8_t *dataBytes){
+
+}
+
+void runDrink4(uint8_t *dataBytes){
+    
+}
+
+void runDrink5(uint8_t *dataBytes){
+
+    setBrewer2InjectPosition(dataBytes);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    xTaskNotify(boilerTaskH, 0x10, eSetBits);
+    injecBrewerWater(dataBytes, 280);
+    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+
+    vTaskDelay(pdMS_TO_TICKS(2500));
+
+    setBrewer2StartPosition(dataBytes);
+
+    //injecBrewerWater(dataBytes, 280);   //280 is the max
+}
+
+void runDrink6(uint8_t *dataBytes){
+    setBrewer2InjectPosition(dataBytes);
+
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+    setBrewer2StartPosition(dataBytes);
+}
+
+void runDrink7(uint8_t *dataBytes){
+    xTaskNotify(boilerTaskH, 0x10, eSetBits);
+    injecBrewerWater(dataBytes, 193);
+    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+}
+
+void runDrink8(uint8_t *dataBytes){
+    xTaskNotify(boilerTaskH, 0x10, eSetBits);
+    injecBrewerWater(dataBytes, 78);
+    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+}
 
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
     i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
@@ -29,6 +114,7 @@ static bool bitChangedInByte(uint8_t *byteData, const uint8_t bitPos, const bool
         return true;
 }
 
+//Used to check if the desires relay state has already changed, this to now over use setRelay function
 static bool differentRelayState(uint8_t *byteData, const OutputRelays outputRelays, const bool newValue){
     bool itsDifferent = false;
 
@@ -185,44 +271,206 @@ static void checkAirBreak(uint8_t *dataBytes){
     bool onError = false;
     int8_t count2Error = 0;
 
-    do{
-        if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
-            if(inputSwStruct.airBreakSw){
+    if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
 
-                if(differentRelayState(dataBytes, WATER_INLET_VALVE, true)){
-                    setRelay(dataBytes, WATER_INLET_VALVE);
-                    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
-                    ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
+        if(inputSwStruct.airBreakSw){
+            vTaskDelay(pdMS_TO_TICKS(30)); 
+            do{
+                if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
+                    if(inputSwStruct.airBreakSw){
+                        setRelay(dataBytes, WATER_INLET_VALVE);
+                        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+                        ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
 
-                    vTaskDelay(pdMS_TO_TICKS(30));
+                        vTaskDelay(pdMS_TO_TICKS(30)); 
+                    }
+                    else{
+                        resetRelay(dataBytes, WATER_INLET_VALVE);
+                        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+                        ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
+
+                        vTaskDelay(pdMS_TO_TICKS(30));
+
+                        doCheck = false;
+                    }
                 }
-            }
-            else{
 
-                if(differentRelayState(dataBytes, WATER_INLET_VALVE, false)){
-                    resetRelay(dataBytes, WATER_INLET_VALVE);
-                    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
-                    ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
+                vTaskDelay(pdMS_TO_TICKS(400));
 
-                    vTaskDelay(pdMS_TO_TICKS(30));
+                if(!onError && (++count2Error > 12)){            //18                //after 8280 mS send erro message to ui
+                    onError = true;
+                    xTaskNotify(uiTaskH, 0x02, eSetBits); 
                 }
 
-                doCheck = false;
-            }
-
+            }while(doCheck);
         }
-
-        vTaskDelay(pdMS_TO_TICKS(400));
-
-        if(!onError && (++count2Error > 18)){                            //after 8280 mS send erro message to ui
-            onError = true;
-            xTaskNotify(uiTaskH, 0x02, eSetBits); 
-        }
-
-    }while(doCheck);
+    }
 
     if(onError)
         xTaskNotify(uiTaskH, 0x01, eSetBits);
+
+}
+
+void resetBrewer(uint8_t *dataBytes){
+    InputSwStruct inputSwStruct;
+
+    setRelay(dataBytes, COFFEE_BREWER_MOTOR);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+
+    int countIt = 0;
+
+    do{
+        if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
+            if(!inputSwStruct.coffeeBrewerSw){
+                countIt++;
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
+
+            if(countIt > 1){
+                vTaskDelay(pdMS_TO_TICKS(2700));
+                resetRelay(dataBytes, COFFEE_BREWER_MOTOR);
+                writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+            }
+
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+    }while(countIt < 2);
+
+}
+
+void setBrewer2StartPosition(uint8_t *dataBytes){
+
+    setRelay(dataBytes, COFFEE_BREWER_MOTOR);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);     
+
+    vTaskDelay(pdMS_TO_TICKS(3700));
+
+    resetRelay(dataBytes, COFFEE_BREWER_MOTOR);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+    
+}
+
+void setBrewer2InjectPosition(uint8_t *dataBytes){
+    InputSwStruct inputSwStruct;
+
+    setRelay(dataBytes, COFFEE_BREWER_MOTOR);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+
+    bool waiting = true;
+
+    do{
+        if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
+            if(!inputSwStruct.coffeeBrewerSw)
+                waiting = false;
+        }    
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+    }while(waiting);
+
+    resetRelay(dataBytes, COFFEE_BREWER_MOTOR);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+}
+
+void injecBrewerWater(uint8_t *dataBytes, uint16_t pulses){
+
+    uint32_t ulNotifiedValue = 0;
+    bool onWait = true;
+
+    ESP_LOGI(CONTROL_TASK_TAG, "Inject brewer water: ON");
+
+    setRelay(dataBytes, THREE_WAY_VALVE);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+    
+    setRelay(dataBytes, PUMP);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+
+    //vTaskDelay(pdMS_TO_TICKS(22000));
+    xQueueSend(xQueueInputPulse, (void *) &pulses, portMAX_DELAY);
+
+    do{
+        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+        if((ulNotifiedValue & 0x08) >> 3){
+            onWait = false;
+            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
+        }
+
+    }while(onWait);
+
+
+    resetRelay(dataBytes, PUMP);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    resetRelay(dataBytes, THREE_WAY_VALVE);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    ESP_LOGE(CONTROL_TASK_TAG, "Inject brewer water: OFF");
+}
+
+static void grindAndDeliver(uint8_t *dataBytes){
+
+    bool wait2Finish = true;
+    bool noCoffee = false;
+
+    double refTime = 0;
+    double cTime = 0;
+
+    InputSwStruct inputSwStruct;
+
+    setRelay(dataBytes, COFFEE_GRINDER_MOTOR);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    refTime = esp_timer_get_time();
+
+    do{
+
+        if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(30))){
+            
+            if(inputSwStruct.coffeeReleaseSw)
+                wait2Finish = false;
+        }
+
+        if(wait2Finish){
+            cTime = esp_timer_get_time() - refTime;
+            //ESP_LOGW(BOILER_TASK_TAG, "grinder time: %lf", cTime);
+            
+            if( cTime >= 16000000){      //16 seg
+                noCoffee = true;
+                wait2Finish = false;
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+
+    }while(wait2Finish);
+
+    resetRelay(dataBytes, COFFEE_GRINDER_MOTOR);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+
+    if(noCoffee)
+        ESP_LOGE(CONTROL_TASK_TAG, "ERROR: NO COFFEE!!!");
+    else{
+        setRelay(dataBytes, COFFEE_RELEASE_MAGNET);
+        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);    
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        resetRelay(dataBytes, COFFEE_RELEASE_MAGNET);
+        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+
+        ESP_LOGI(CONTROL_TASK_TAG, "Coffee released :)");
+    }
 
 }
 
@@ -233,6 +481,20 @@ static void waitMachine2Start(uint8_t *dataBytes){
 
 static void startBoilerTask(){
     xTaskNotify(boilerTaskH, 0x04, eSetBits);         
+}
+
+static void waitBoiler2Start(){
+    uint32_t ulNotifiedValue = 0;
+
+    bool waiting = true;
+
+    do{
+        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+        if((ulNotifiedValue & 0x04) >> 2)
+            waiting = false;
+
+    }while(waiting);
 }
 
 static void syncronizeAllTasks(){
@@ -258,6 +520,48 @@ static void syncronizeAllTasks(){
     }while(uiT_off || inT_off || boT_off);
 
 
+}
+
+static void checkQueuesFromUi(ControlState *controlState){
+
+    InputBtnStruct tempInputBtnStruct;
+
+    if(xQueueReceive(xQueueInputBtns, &tempInputBtnStruct, pdMS_TO_TICKS(10)) == pdPASS){
+
+        if(*controlState == IDLE_C){
+
+            if(tempInputBtnStruct.btn0)
+                *controlState = DRINK_1_C;
+            else if(tempInputBtnStruct.btn1)
+                *controlState = DRINK_2_C;
+            else if(tempInputBtnStruct.btn2)
+                *controlState = DRINK_3_C;
+            else if(tempInputBtnStruct.btn3)
+                *controlState = DRINK_4_C;
+            else if(tempInputBtnStruct.btn4)
+                *controlState = DRINK_5_C;
+            else if(tempInputBtnStruct.btn5)
+                *controlState = DRINK_6_C;
+            else if(tempInputBtnStruct.btn6)
+                *controlState = DRINK_7_C;
+            else if(tempInputBtnStruct.btn7)
+                *controlState = DRINK_8_C;
+            else if(tempInputBtnStruct.btnA)
+                *controlState = CLEAN_C;
+            else if(tempInputBtnStruct.btnB)
+                *controlState = MAINTENANCE_C;
+            
+            /*
+            ESP_LOGE(CONTROL_TASK_TAG, "-> %d %d %d %d %d %d %d %d %d %d",
+                tempInputBtnStruct.btn0, tempInputBtnStruct.btn1, tempInputBtnStruct.btn2, 
+                tempInputBtnStruct.btn3, tempInputBtnStruct.btn4, tempInputBtnStruct.btn5,
+                tempInputBtnStruct.btn6, tempInputBtnStruct.btn7, tempInputBtnStruct.btnA, 
+                tempInputBtnStruct.btnB);
+                */
+        }
+        
+
+    }
 }
 
 
@@ -319,9 +623,14 @@ static void controlTask(void *pvParameters){
 
     checkAirBreak(outputIO_Buff);
 
+    xTaskNotify(uiTaskH, 0x020, eSetBits);                  //Set ui task to booting state
+
     startBoilerTask();
 
-    xTaskNotify(uiTaskH, 0x020, eSetBits);                  //Set ui task to booting state
+    waitBoiler2Start();
+
+    resetBrewer(outputIO_Buff);
+
     //syncronizeAllTasks();
 
     ESP_LOGI(CONTROL_TASK_TAG, "ONLINE");
@@ -329,42 +638,53 @@ static void controlTask(void *pvParameters){
 
     while(true){
 
+        checkQueuesFromUi(&controlState);
+
         switch(controlState){
             case IDLE_C:
-            
+
             break;
             case MAINTENANCE_C:
-
+                controlState = IDLE_C;
             break;
             case CLEAN_C:
-
+                controlState = IDLE_C;
             break;
             case DRINK_1_C:
-
+                runDrink1(outputIO_Buff);
+                controlState = IDLE_C;
             break;
             case DRINK_2_C:
-
+                runDrink2(outputIO_Buff);
+                controlState = IDLE_C;
             break;
             case DRINK_3_C:
-
+                runDrink3(outputIO_Buff);
+                controlState = IDLE_C;
             break;
             case DRINK_4_C:
-
+                runDrink4(outputIO_Buff);
+                controlState = IDLE_C;
             break;
             case DRINK_5_C:
-
+                runDrink5(outputIO_Buff);
+                controlState = IDLE_C;
             break;
             case DRINK_6_C:
-
+                runDrink6(outputIO_Buff);
+                controlState = IDLE_C;
             break;
             case DRINK_7_C:
-
+                runDrink7(outputIO_Buff);
+                controlState = IDLE_C;
             break;
             case DRINK_8_C:
-
+                runDrink8(outputIO_Buff);
+                controlState = IDLE_C;
             break;
         }
 
+        checkAirBreak(outputIO_Buff);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 

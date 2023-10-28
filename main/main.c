@@ -8,6 +8,7 @@
 
 QueueHandle_t xQueueIntB = NULL;
 QueueHandle_t xQueueInputsSw = NULL;
+QueueHandle_t xQueueInputBtns = NULL;
 QueueHandle_t xQueueInputPulse = NULL;
 QueueHandle_t xQueueBoilerTemp = NULL;
 QueueHandle_t xQueueSpp = NULL;
@@ -179,6 +180,7 @@ static void IRAM_ATTR interrupt_handler(void *args){
 static void initQueues(){
     xQueueIntB = xQueueCreate(10, sizeof(int16_t));
     xQueueInputsSw = xQueueCreate(1, sizeof(InputSwStruct));
+    xQueueInputBtns = xQueueCreate(1, sizeof(InputBtnStruct));
     xQueueInputPulse = xQueueCreate(1, sizeof(uint16_t));
     xQueueBoilerTemp = xQueueCreate(1, sizeof(float));
     xQueueSpp = xQueueCreate(10, sizeof(spp_queue_item_t));
@@ -188,6 +190,9 @@ static void initQueues(){
     
     if(xQueueInputsSw == NULL)
         ESP_LOGE(MAIN_TASK_TAG, "xQueueInputsSw initialization error!");
+
+    if(xQueueInputBtns == NULL)
+        ESP_LOGE(MAIN_TASK_TAG, "xQueueInputBtns initialization error!");
 
     if(xQueueInputPulse == NULL)
         ESP_LOGE(MAIN_TASK_TAG, "xQueueInputPulse initialization error!");
@@ -240,8 +245,8 @@ static void initGPIO(){
     gpio_set_level(SER_DISPLAY_PIN, 1);
     gpio_set_level(MCP23017_IN_RS_PIN, 1);
     gpio_set_level(MCP23017_OUT_RS_PIN, 1);
-    gpio_set_level(BOILER_PIN, 0);
-    //gpio_set_level(STATUS_LED_PIN, 0);
+    //gpio_set_level(BOILER_PIN, 0);
+    gpio_set_level(STATUS_LED_PIN, 0);
 }
 
 static void initI2C(){
@@ -280,7 +285,7 @@ static void initLEDC(){
         .channel        = LEDC_CHANNEL,
         .timer_sel      = LEDC_TIMER,
         .intr_type      = LEDC_INTR_DISABLE,
-        .gpio_num       = STATUS_LED_PIN,       //BOILER_PIN
+        .gpio_num       = BOILER_PIN,//STATUS_LED_PIN,       //BOILER_PIN
         .duty           = 0,
         .hpoint         = 0
     };

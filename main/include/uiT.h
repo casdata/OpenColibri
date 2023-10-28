@@ -36,7 +36,7 @@ static void setLcdDDRAM_addr(uint8_t addr);
 static void write2LCD(const char *dataStr, const uint8_t dataStrLength, const uint8_t pos);
 static void setLcdPos(uint8_t x);
 static void getBoilerTemp(float *temperature);
-static void updateUI(uint16_t *uiSwitches);
+static bool updateUI(InputBtnStruct *uiBtns);
 static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiState, ErrorCode *errorCode);
 static void inBootingCodeState(float *bTemperature);
 static void inErrorCodeState(const ErrorCode errorCode);

@@ -13,18 +13,32 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff){
     inputStruct->cupReleaseSw = readSW(iBuff, CUP_RELEASE_SW);
     inputStruct->cupSensorSw = readSW(iBuff, CUP_SENSOR_SW);
 
+    ESP_LOGE(INTERRUPTS_TASK_TAG, "wOver: %d brewer: %d air: %d releC: %d ", inputStruct->wasteOverflowSw , 
+        inputStruct->coffeeBrewerSw, inputStruct->airBreakSw, inputStruct->coffeeReleaseSw);
+
     xQueueOverwrite(xQueueInputsSw, (void *) inputStruct);
 }
 
-static void check4Notifications(uint16_t *ptrCount){
+static void check4Notifications(){
     uint32_t ulNotifiedValue = 0;
 
     if(xTaskNotifyWait(0xFF, 0, &ulNotifiedValue, pdMS_TO_TICKS(10)) == pdPASS){
+        /*
         if((ulNotifiedValue & 0x01)){
             *ptrCount = 0;
             ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: reset pulse count");
         }
+        */
     }
+}
+
+static bool check4PulseCount(uint16_t *ptrCount, uint16_t *ptrCountTarget){
+    if(xQueueReceive(xQueueInputPulse, (void *) ptrCountTarget, pdMS_TO_TICKS(10)) == pdPASS){
+        *ptrCount = 0;
+        return true;
+    }
+    
+    return false;
 }
 
 static void readBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
@@ -71,6 +85,8 @@ static void interruptsTask(void *pvParameters){
 
     int16_t pinNum;
     uint16_t count = 0;
+    uint16_t targetCount = 0;
+    bool checkingCount = false;
 
     uint8_t *inputIO_Buff;
 
@@ -81,19 +97,28 @@ static void interruptsTask(void *pvParameters){
     //xTaskNotify(controlTaskH, 0x02, eSetBits);              //Notify control task that is ready
     ESP_LOGI(INTERRUPTS_TASK_TAG, "ONLINE");
 
-    xQueueOverwrite(xQueueInputPulse, (void *) &count);
+    //xQueueOverwrite(xQueueInputPulse, (void *) &count);
     readInputSws(&inputSwStruct, inputIO_Buff);
 
     while(1){
 
-        check4Notifications(&count);
+        //check4Notifications();
+        if(!checkingCount)
+            checkingCount = check4PulseCount(&count, &targetCount);
 
         if(xQueueReceive(xQueueIntB, &pinNum, pdMS_TO_TICKS(10))){
 
             switch(pinNum){
                 case VOLUMETRIC_PIN:
                     count++;
-                    xQueueOverwrite(xQueueInputPulse, (void *) &count);
+
+                    if(count >= targetCount && checkingCount){
+                        xTaskNotify(controlTaskH, 0x08, eSetBits);
+
+                        checkingCount = false;
+                    }
+                    //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d -%d", count, targetCount);
+                    //xQueueOverwrite(xQueueInputPulse, (void *) &count);
                 break;
                 case MCP23017_INTB_PIN:
 

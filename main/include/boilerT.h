@@ -40,11 +40,12 @@ static float thermC =  1.009595903e-7;
 
 
 typedef enum{
-    B_NORMAL_MODE = 0,
-    B_NORMAL_2_OVERDRIVE,
-    B_OVERDRIVE_MODE,
-    B_OVERDRIVE_2_NORMAL
-} BoilerStateMode;
+    INIT_B = 0,
+    IDLE_B,
+    IDLE_2_HOT_B,
+    HOT_B,
+    HOT_2_IDLE_B
+} BoilerState;
 
 typedef enum{
     P_DATA = 0,
@@ -58,23 +59,37 @@ typedef struct BoilerBoolStruct{
     bool boilerIsOn;
     bool boilerState;
     bool toSend;                            //Used for nextion pid tunner, true = thermistorTemp; false = setPoint
-    BoilerStateMode boilerStateMode;
     float thermistorTemp;
-    uint16_t setPoint;
-    uint16_t boilerDuty;
+    float boilerDuty;
+} BoilerStructData;
+
+typedef struct PID_Struct{
+    bool  controllerState;
+    float setPoint;
     float kP;
     float kI;
     float kD;
-} BoilerStructData;
-
+    float minOut;
+    float maxOut;
+    float offset;
+    float outputSum;
+    float lastInput;
+    float error;
+    float pError;
+    float pidP;
+    float pidI;
+    float pidD;
+    double cTime;
+    double pTime;
+} PID_DataStruct;
 
 static bool readMCP3421_ADC(uint16_t *adcValue);
 static void readTemp(BoilerStructData *boilerStructData);
-static void innerBoilerControl(BoilerStructData *boilerStructData);
 static void wait4Control();
-static void checkNotifications4Boiler(BoilerStructData *boilerStructData);
+static void checkNotifications4Boiler(BoilerState *bState);
 static void getMessage2Send2Nextion(char *strData, BoilerStructData *boilerStructData);
-static bool checkDataFromNextionPID_Tunner(BoilerStructData *boilerStructData, pid_ctrl_config_t *pidConfig);
+static bool checkDataFromNextionPID_Tunner(PID_DataStruct *pidDataStruct);
+static void computePID(PID_DataStruct *pidDataStruct, float inputData, float *outputData);
 
 void initBoilerTask();
 static void boilerTask(void *pvParameters);

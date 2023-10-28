@@ -260,8 +260,11 @@ static void getBoilerTemp(float *temperature){
 }
 
 
-void updateUI(uint16_t *uiSwitches){
+bool updateUI(InputBtnStruct *uiBtns){
+    bool changed = false;
 
+    uint16_t uiSwitches = 0; 
+    static uint16_t preUiSwitches = 0;
     
     //Clear registers in the 74HC165 and 74HC595
     gpio_set_level(SH_LD_UI_PIN, 1);            //LOW
@@ -278,7 +281,7 @@ void updateUI(uint16_t *uiSwitches){
     
 
 
-    setBit2Word(uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), 0);
+    setBit2Word(&uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), 0);
 
 
     for(size_t i = 1; i < 8; i++){
@@ -288,7 +291,7 @@ void updateUI(uint16_t *uiSwitches){
 
         gpio_set_level(CLK_UI_PIN, 1);
 
-        setBit2Word(uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), i);
+        setBit2Word(&uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), i);
 
         vTaskDelay(pdMS_TO_TICKS(1));
 
@@ -311,13 +314,75 @@ void updateUI(uint16_t *uiSwitches){
 
         gpio_set_level(CLK_UI_PIN, 1);
 
-        setBit2Word(uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), i);
+        setBit2Word(&uiSwitches, !gpio_get_level(IN_SERIAL_UI_PIN), i);
 
         vTaskDelay(pdMS_TO_TICKS(1)); 
     }
 
 
-    ESP_LOGI(UI_TASK_TAG, "%d", *uiSwitches);                                                     
+    if(uiSwitches != preUiSwitches){
+        preUiSwitches = uiSwitches;
+        changed = true;
+
+        if(uiSwitches & 1)
+            uiBtns->btn0 = true;
+        else
+            uiBtns->btn0 = false;
+
+        if((uiSwitches >> 1) & 1)
+            uiBtns->btn1 = true;
+        else
+            uiBtns->btn1 = false;
+
+        if((uiSwitches >> 2) & 1)
+            uiBtns->btn2 = true;
+        else
+            uiBtns->btn2 = false;
+
+        if((uiSwitches >> 3) & 1)
+            uiBtns->btn3 = true;
+        else
+            uiBtns->btn3 = false;
+
+        if((uiSwitches >> 4) & 1)
+            uiBtns->btn4 = true;
+        else
+            uiBtns->btn4 = false;
+        
+        if((uiSwitches >> 5) & 1)
+            uiBtns->btn5 = true;
+        else
+            uiBtns->btn5 = false;
+
+        if((uiSwitches >> 6) & 1)
+            uiBtns->btn6 = true;
+        else
+            uiBtns->btn6 = false;
+
+        if((uiSwitches >> 7) & 1)
+            uiBtns->btn7 = true;
+        else
+            uiBtns->btn7 = false;
+
+        if((uiSwitches >> 9) & 1)
+            uiBtns->btnA = true;
+        else
+            uiBtns->btnA = false;
+        
+        if((uiSwitches >> 10) & 1)
+            uiBtns->btnB = true;
+        else
+            uiBtns->btnB = false;
+
+        /*
+        ESP_LOGE(UI_TASK_TAG, "->%d = %d %d %d %d %d %d %d %d %d %d", uiSwitches,
+                uiBtns->btn0, uiBtns->btn1, uiBtns->btn2, uiBtns->btn3, uiBtns->btn4, uiBtns->btn5,
+                uiBtns->btn6, uiBtns->btn7, uiBtns->btnA, uiBtns->btnB);
+        */
+
+    }                                                  
+
+    return changed;
                                                             
 }
 
@@ -531,13 +596,15 @@ static void uiTask(void *pvParameters){
 
     uint16_t uiSwitches = 0;
     float bTemp = 0;                            //boiler temperature
+    InputBtnStruct inputBtnStruct;
+
     UiState currentUiState = IDLE_UI;
     UiState previousUiState = IDLE_UI;
 
     ErrorCode errorCode = NONE;
 
     initLcd();
-    write2LCD("OpenColibri V001", 16, 0);
+    write2LCD("OpenColibri V002", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
@@ -547,7 +614,8 @@ static void uiTask(void *pvParameters){
 
         checkNotifications4Ui(&previousUiState, &currentUiState, &errorCode);
 
-        updateUI(&uiSwitches);
+        if(updateUI(&inputBtnStruct))
+            xQueueSend(xQueueInputBtns, (void *) &inputBtnStruct, portMAX_DELAY);
 
         switch(currentUiState){
             case IDLE_UI:

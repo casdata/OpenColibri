@@ -66,36 +66,6 @@ static void readTemp(BoilerStructData *boilerStructData){
     }
 }
 
-static void innerBoilerControl(BoilerStructData *boilerStructData){
-    if(boilerStructData->boilerIsOn){
-
-
-        switch(boilerStructData->boilerStateMode){
-            case B_OVERDRIVE_MODE:
-
-            break;
-            case B_NORMAL_MODE:
-
-            break;
-            case B_NORMAL_2_OVERDRIVE:
-                boilerStructData->boilerStateMode = B_OVERDRIVE_MODE;
-                //gpio_set_level(STATUS_LED_PIN, 1);
-            break;
-            case B_OVERDRIVE_2_NORMAL:
-                boilerStructData->boilerStateMode = B_NORMAL_MODE;
-                //gpio_set_level(STATUS_LED_PIN, 0);
-            break;
-        }
-        
-    }
-    else{
-        if(boilerStructData->boilerState){
-            boilerStructData->boilerState = false;
-            //gpio_set_level(STATUS_LED_PIN, 0);
-        }
-    }
-}
-
 
 
 static void wait4Control(){
@@ -114,10 +84,10 @@ static void wait4Control(){
 }
 
 
-static void checkNotifications4Boiler(BoilerStructData *boilerStructData){
+static void checkNotifications4Boiler(BoilerState *bState){
     uint32_t ulNotifiedValue = 0;
 
-    if(xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, pdMS_TO_TICKS(15) == pdPASS)){
+    if(xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, pdMS_TO_TICKS(15))){
         if(ulNotifiedValue & 0x001){
             ESP_LOGW(UI_TASK_TAG, "Boiler Ready NOTIFICATION");
             
@@ -134,13 +104,15 @@ static void checkNotifications4Boiler(BoilerStructData *boilerStructData){
         }
 
         if((ulNotifiedValue & 0x008) >> 3){
-            ESP_LOGW(UI_TASK_TAG, "Set Boiler Normal Mode NOTIFICATION");
-            boilerStructData->boilerStateMode = B_OVERDRIVE_2_NORMAL;
+            ESP_LOGW(UI_TASK_TAG, "Set Boiler IDLE Mode NOTIFICATION");
+            //*bState = IDLE_B;
+            *bState = HOT_2_IDLE_B;
         }
 
         if((ulNotifiedValue & 0x010) >> 4){
-            ESP_LOGW(UI_TASK_TAG, "Set Boiler Overdrive Mode NOTIFICATION");
-            boilerStructData->boilerStateMode = B_NORMAL_2_OVERDRIVE;
+            ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT Mode NOTIFICATION");
+            //*bState = HOT_B;
+            *bState = IDLE_2_HOT_B;
         }
     }
 
@@ -174,7 +146,7 @@ void getMessage2Send2Nextion(char *strData, BoilerStructData *boilerStructData){
 }
 
 
-bool checkDataFromNextionPID_Tunner(BoilerStructData *boilerStructData, pid_ctrl_config_t *pidConfig){
+bool checkDataFromNextionPID_Tunner(PID_DataStruct *pidDataStruct){
     bool newData = false;
     static uart_event_t uEvent;
 
@@ -232,10 +204,22 @@ bool checkDataFromNextionPID_Tunner(BoilerStructData *boilerStructData, pid_ctrl
             int startIndex = -1;
             int endIndex = -1;
             NextionData nextionData;
+            bool resetPID_Data = false;
 
             for(size_t i = 0; i < buffSize; i++){
 
-                if(tempData[i] == 'p'){
+                if(tempData[i] == 'r'){
+                    resetPID_Data = true;
+                    break;
+                }
+                else if(tempData[i] == '='){
+                    if(pidDataStruct->controllerState)
+                        pidDataStruct->controllerState = false;
+                    else
+                        pidDataStruct->controllerState = true;
+                    break;
+                }
+                else if(tempData[i] == 'p'){
                     startIndex = i;
                     nextionData = P_DATA;
                 }
@@ -280,30 +264,114 @@ bool checkDataFromNextionPID_Tunner(BoilerStructData *boilerStructData, pid_ctrl
 
                 switch(nextionData){
                     case P_DATA:
-                        boilerStructData->kP = floatData;   
+                        pidDataStruct->kP = floatData;   
                     break;
                     case I_DATA:
-                        boilerStructData->kI = floatData;
+                        pidDataStruct->kI = floatData;
                     break;
                     case D_DATA:
-                        boilerStructData->kD = floatData;
+                        pidDataStruct->kD = floatData;
                     break;
                     default:                //S_DATA
-                        boilerStructData->setPoint = intData;
+                        pidDataStruct->setPoint = intData;
                     break;
                 }
 
                 newData = true;
                 free(tempStr);
             }
-        }
+            else if(resetPID_Data){
+                // pidDataStruct->kP = 0;
+                // pidDataStruct->kI = 0;
+                // pidDataStruct->kD = 0;
+                pidDataStruct->outputSum = 0;
+                pidDataStruct->lastInput = 0;
+                pidDataStruct->error = 0;
+                pidDataStruct->pError = 0;
+                pidDataStruct->pidP = 0;
+                pidDataStruct->pidI = 0;
+                pidDataStruct->pidD = 0;
 
+                ESP_LOGE(BOILER_TASK_TAG, "PID DATA CLEARED!!!");
+                newData = true;
+            }
+        }
         free(tempData);
     }
-
     return newData;
-
 }
+
+
+void computePID(PID_DataStruct *pidDataStruct, float inputData, float *outputData){
+
+    float eTime = 0;
+
+    //ESP_LOGI(BOILER_TASK_TAG, "%lf - %lf", tempTime, eTime);
+    
+    pidDataStruct->error = pidDataStruct->setPoint - inputData;
+
+    pidDataStruct->pidP = pidDataStruct->kP * pidDataStruct->error;
+
+    //if(pidDataStruct->error > -3 && pidDataStruct->error < 3)
+    pidDataStruct->pidI += (pidDataStruct->kI * pidDataStruct->error);
+
+    
+    float elapsedTime = 1;
+
+    pidDataStruct->pTime = pidDataStruct->cTime;
+    pidDataStruct->cTime = esp_timer_get_time();
+
+    eTime = pidDataStruct->cTime - pidDataStruct->pTime;
+    eTime /= 1000000;
+    ESP_LOGI(BOILER_TASK_TAG, "eTime %f", eTime);
+
+    pidDataStruct->pidD = pidDataStruct->kD * ((pidDataStruct->error - pidDataStruct->pError)/eTime);
+    
+    float output = pidDataStruct->pidP + pidDataStruct->pidI + pidDataStruct->pidD + pidDataStruct->offset;
+
+    if(output > pidDataStruct->maxOut)
+        output = pidDataStruct->maxOut;
+    else if(output < pidDataStruct->minOut)
+        output = pidDataStruct->minOut;
+
+    pidDataStruct->pError = pidDataStruct->error;
+
+    *outputData = output;
+
+    /*
+    bool proError = true;
+
+    pidDataStruct->error = pidDataStruct->setPoint - inputData;
+    float dInput = (inputData - pidDataStruct->lastInput);
+
+    pidDataStruct->outputSum += (pidDataStruct->kI * pidDataStruct->error);
+
+    if(!proError)
+        pidDataStruct->outputSum -= pidDataStruct->kP * dInput;
+
+    if(pidDataStruct->outputSum > pidDataStruct->maxOut)
+        pidDataStruct->outputSum = pidDataStruct->maxOut;
+    else if(pidDataStruct->outputSum < pidDataStruct->minOut)
+        pidDataStruct->outputSum = pidDataStruct->minOut;
+
+    float output = 0;
+    
+    if(proError)
+        output = pidDataStruct->kP * pidDataStruct->error;
+
+    output += pidDataStruct->outputSum - pidDataStruct->kD * dInput;
+
+    if(output > pidDataStruct->maxOut)
+        output = pidDataStruct->maxOut;
+    else if(output < pidDataStruct->minOut)
+        output = pidDataStruct->minOut;
+
+    pidDataStruct->lastInput = inputData;
+
+    *outputData = output;
+    */
+}
+
 
 
 void initBoilerTask(){
@@ -322,32 +390,102 @@ void initBoilerTask(){
 
 static void boilerTask(void *pvParameters){
 
-    BoilerStructData boilerStructData = {true, false, true, B_NORMAL_MODE, 0.0f, 0, 0, 0, 0, 0};
+    float targetTemp = 90.0f;
+
+    BoilerState boilerState = INIT_B;
+    BoilerStructData boilerStructData = {true, false, true, 0.0f, 0.0f};
+    PID_DataStruct myPID_Data = {true, 87.0f, 220.0f, 0.0f, 120.0f, 0.0f, 8191.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0};
+    myPID_Data.setPoint = targetTemp - 3.0f;
+
     char *tempBuff = malloc(60);
 
     wait4Control();
 
     //xTaskNotify(controlTaskH, 0x04, eSetBits);              //Notify control task that is ready
+    myPID_Data.cTime = esp_timer_get_time();
+
     ESP_LOGI(BOILER_TASK_TAG, "ONLINE");
-
-    pid_ctrl_block_handle_t myPidHandle;
-    pid_ctrl_config_t myPidConfig; 
-    myPidConfig.init_param.cal_type = PID_CAL_TYPE_INCREMENTAL;
-    myPidConfig.init_param.min_output = 0.0f;
-    myPidConfig.init_param.max_output = 8191.0f;
-
-
-    ESP_ERROR_CHECK(pid_new_control_block(&myPidConfig, &myPidHandle));
 
 
     while(1){
-        checkNotifications4Boiler(&boilerStructData);
+        checkNotifications4Boiler(&boilerState);
 
         readTemp(&boilerStructData);
 
-        innerBoilerControl(&boilerStructData);
-
         xQueueOverwrite(xQueueBoilerTemp, (void *) &boilerStructData.thermistorTemp);
+
+        /*
+        if(boilerState == INIT_B  && boilerStructData.thermistorTemp >= 87.0f){
+            xTaskNotify(controlTaskH, 0x04, eSetBits);                              //Notify control task that boiler is ready
+            vTaskDelay(pdMS_TO_TICKS(100));
+
+            myPID_Data.setPoint = 90.0f;
+            boilerState = IDLE_B;
+
+            ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 0));  
+            ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+            
+            vTaskDelay(pdMS_TO_TICKS(7000));
+        }
+        */
+
+
+        switch(boilerState){
+            case IDLE_B:
+        
+            break;
+            case HOT_B:
+
+            break;
+            case IDLE_2_HOT_B:
+                //myPID_Data.kP = 220.0f;
+                //myPID_Data.kD = 120.0f
+                //myPID_Data.minOut = 6143;      // 3/4 of the boiler power
+                myPID_Data.kI = 0.5f;
+
+                myPID_Data.outputSum = 0;
+                myPID_Data.lastInput = 0;
+                myPID_Data.error = 0;
+                myPID_Data.pError = 0;
+                myPID_Data.pidP = 0;
+                myPID_Data.pidI = 0;
+                myPID_Data.pidD = 0;
+
+                myPID_Data.offset = 4096.0f;
+                
+                boilerState = HOT_B;
+            break;
+            case HOT_2_IDLE_B:
+                myPID_Data.kI = 0.0f;
+
+                myPID_Data.outputSum = 0;
+                myPID_Data.lastInput = 0;
+                myPID_Data.error = 0;
+                myPID_Data.pError = 0;
+                myPID_Data.pidP = 0;
+                myPID_Data.pidI = 0;
+                myPID_Data.pidD = 0;
+
+                myPID_Data.offset = 0.0f;
+
+                boilerState = IDLE_B;
+            break;
+            default:                        //INIT_B
+                if(boilerStructData.thermistorTemp >= targetTemp - 3.0f){
+                    xTaskNotify(controlTaskH, 0x04, eSetBits);                              //Notify control task that boiler is ready
+                    vTaskDelay(pdMS_TO_TICKS(100));
+
+                    myPID_Data.setPoint = targetTemp;
+                    boilerState = IDLE_B;
+
+                    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 0));  
+                    ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+            
+                    vTaskDelay(pdMS_TO_TICKS(7000));
+                }
+            break;
+        }
+        
 
         boilerStructData.toSend = true;
         getMessage2Send2Nextion(tempBuff, &boilerStructData);
@@ -357,20 +495,43 @@ static void boilerTask(void *pvParameters){
         getMessage2Send2Nextion(tempBuff, &boilerStructData);
         uart_write_bytes(UART_PORT_N, tempBuff, strlen(tempBuff));
 
-        if(checkDataFromNextionPID_Tunner(&boilerStructData, &myPidConfig))
-            pid_update_parameters(myPidHandle, &myPidConfig);
+        if(checkDataFromNextionPID_Tunner(&myPID_Data))
+            ESP_LOGE(BOILER_TASK_TAG, "PID DATA UPDATED!! ");
+    
 
-        //pid_compute(myPidHandle, 
-          //          (boilerStructData.setPoint - boilerStructData.thermistorTemp), 
-            //        &boilerStructData.thermistorTemp);
+        if(myPID_Data.controllerState)
+            computePID(&myPID_Data, boilerStructData.thermistorTemp, &boilerStructData.boilerDuty);
+        else 
+            boilerStructData.boilerDuty = 0;
 
-        //ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 2048));  //2048 - 8191
-        //ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+        /*
+        if(boilerState != HOT_B){
+            if(myPID_Data.controllerState)
+                computePID(&myPID_Data, boilerStructData.thermistorTemp, &boilerStructData.boilerDuty);
+            else 
+                boilerStructData.boilerDuty = 0;
+        }
+        else{
+             boilerStructData.boilerDuty = 6962.0f; //85%
+        }
+        */
 
-        ESP_LOGW(BOILER_TASK_TAG, "%f - %d - %f - %f - %f", 
-                boilerStructData.thermistorTemp, boilerStructData.setPoint,
-                boilerStructData.kP, boilerStructData.kI, boilerStructData.kD);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, (uint32_t)boilerStructData.boilerDuty));  //2048 - 8191
+        ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+
+        ESP_LOGW(BOILER_TASK_TAG, "TEMP: %f - %f - %f - %f - %f", 
+            boilerStructData.thermistorTemp, myPID_Data.setPoint,
+            boilerStructData.boilerDuty, myPID_Data.error, myPID_Data.pError);
+
+        ESP_LOGW(BOILER_TASK_TAG, "PID0: %d - %f - %f - %f", 
+            myPID_Data.controllerState, myPID_Data.kP, myPID_Data.kI, myPID_Data.kD);
+
+        ESP_LOGI(BOILER_TASK_TAG, "PID1: %f - %f - %f", 
+            myPID_Data.pidP, myPID_Data.pidI, myPID_Data.pidD);      
+        
+
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 
 }

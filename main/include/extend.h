@@ -18,6 +18,8 @@
 #include "esp_bt_device.h"
 #include "esp_gap_bt_api.h"
 #include "esp_spp_api.h"
+#include "esp_timer.h"
+#include "esp_sleep.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
@@ -128,6 +130,19 @@ typedef struct InputBoolStruct{
     bool    cupSensorSw;
 } InputSwStruct;
 
+typedef struct Input2BoolStruct{
+    bool    btn0;
+    bool    btn1;
+    bool    btn2;
+    bool    btn3;
+    bool    btn4;
+    bool    btn5;
+    bool    btn6;
+    bool    btn7;
+    bool    btnA;
+    bool    btnB;
+} InputBtnStruct;
+
 /*
 typedef struct OutputBoolStruct{
     bool    solenoidValve2;
@@ -149,6 +164,7 @@ typedef struct OutputBoolStruct{
 
 extern QueueHandle_t xQueueIntB;
 extern QueueHandle_t xQueueInputsSw;
+extern QueueHandle_t xQueueInputBtns;
 extern QueueHandle_t xQueueInputPulse;
 extern QueueHandle_t xQueueBoilerTemp;
 extern QueueHandle_t xQueueSpp;
