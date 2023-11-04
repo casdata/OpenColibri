@@ -90,8 +90,8 @@
 #define BT_TASK_TAG             "BT_TASK_T"
 
 typedef enum {
-    SOLENOID_VALVE_2 = 0,   //RELAY 1 / GPB6 / O.5 BOILER 3 WAY-VALVE FAR
-    SOLENOID_VALVE_1,       //RELAY 2 / GPB5 / O.6 BOILER 3 WAY-VALVE NEAR
+    SOLENOID_VALVE_2 = 0,   //RELAY 1 / GPB6 / O.5 BOILER 3 WAY-VALVE FAR / WHIPPER PIPE
+    SOLENOID_VALVE_1,       //RELAY 2 / GPB5 / O.6 BOILER 3 WAY-VALVE NEAR / ONLY WATER PIPE
     COFFEE_BREWER_MOTOR,    //RELAY 3 / GPB4 / O.9 ARM MOTOR
     PUMP,                   //RELAY 4 / GPB3 / O.3 WATER PUMP
     COFFEE_GRINDER_MOTOR,   //RELAY 5 / GPB2 / O.0 GRINDER
@@ -166,6 +166,7 @@ extern QueueHandle_t xQueueIntB;
 extern QueueHandle_t xQueueInputsSw;
 extern QueueHandle_t xQueueInputBtns;
 extern QueueHandle_t xQueueInputPulse;
+extern QueueHandle_t xQueueInputTimePerPulse;
 extern QueueHandle_t xQueueBoilerTemp;
 extern QueueHandle_t xQueueSpp;
 

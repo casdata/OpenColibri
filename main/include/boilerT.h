@@ -43,8 +43,10 @@ typedef enum{
     INIT_B = 0,
     IDLE_B,
     IDLE_2_HOT_B,
+    IDLE_2_HOT_MAX_B,
     HOT_B,
-    HOT_2_IDLE_B
+    HOT_2_IDLE_B,
+    HOT_MAX_B
 } BoilerState;
 
 typedef enum{

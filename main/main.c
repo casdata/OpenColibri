@@ -10,6 +10,7 @@ QueueHandle_t xQueueIntB = NULL;
 QueueHandle_t xQueueInputsSw = NULL;
 QueueHandle_t xQueueInputBtns = NULL;
 QueueHandle_t xQueueInputPulse = NULL;
+QueueHandle_t xQueueInputTimePerPulse = NULL;
 QueueHandle_t xQueueBoilerTemp = NULL;
 QueueHandle_t xQueueSpp = NULL;
 
@@ -182,6 +183,7 @@ static void initQueues(){
     xQueueInputsSw = xQueueCreate(1, sizeof(InputSwStruct));
     xQueueInputBtns = xQueueCreate(1, sizeof(InputBtnStruct));
     xQueueInputPulse = xQueueCreate(1, sizeof(uint16_t));
+    xQueueInputTimePerPulse = xQueueCreate(1, sizeof(double));
     xQueueBoilerTemp = xQueueCreate(1, sizeof(float));
     xQueueSpp = xQueueCreate(10, sizeof(spp_queue_item_t));
 
@@ -196,6 +198,9 @@ static void initQueues(){
 
     if(xQueueInputPulse == NULL)
         ESP_LOGE(MAIN_TASK_TAG, "xQueueInputPulse initialization error!");
+
+    if(xQueueInputTimePerPulse == NULL)
+        ESP_LOGE(MAIN_TASK_TAG, "xQueueInputTimePerPulse initialization error!");
 
     if(xQueueBoilerTemp == NULL)
         ESP_LOGE(MAIN_TASK_TAG, "xQueueBoilerTemp initialization error!");

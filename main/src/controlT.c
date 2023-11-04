@@ -3,7 +3,7 @@
 
 TaskHandle_t controlTaskH = NULL;
 
-void runDrink1(uint8_t *dataBytes){
+void runDrink1(uint8_t *dataBytes, ContsPowderData *contsPowData){
 
     grindAndDeliver(dataBytes);
 
@@ -23,7 +23,7 @@ void runDrink1(uint8_t *dataBytes){
 
 }
 
-void runDrink2(uint8_t *dataBytes){
+void runDrink2(uint8_t *dataBytes, ContsPowderData *contsPowData){
 
     grindAndDeliver(dataBytes);
 
@@ -34,7 +34,7 @@ void runDrink2(uint8_t *dataBytes){
     vTaskDelay(pdMS_TO_TICKS(1000));
 
     xTaskNotify(boilerTaskH, 0x10, eSetBits);
-    injecBrewerWater(dataBytes, 78);
+    injecBrewerWater(dataBytes, 220);                //78
     xTaskNotify(boilerTaskH, 0x08, eSetBits);
 
     vTaskDelay(pdMS_TO_TICKS(2500));
@@ -44,16 +44,69 @@ void runDrink2(uint8_t *dataBytes){
 
 }
 
-void runDrink3(uint8_t *dataBytes){
+void runDrink3(uint8_t *dataBytes, ContsPowderData *contsPowData){
+    //injectPowderPlusWater(dataBytes, 100);
+    /*
+    setRelay(dataBytes, DOSER_DEVICE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    double tTime = esp_timer_get_time();
+
+    vTaskDelay(pdMS_TO_TICKS(6000));   //11 gr
+
+    ESP_LOGE(CONTROL_TASK_TAG, "time: %lf", (esp_timer_get_time() - tTime));
+
+    resetRelay(dataBytes, DOSER_DEVICE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+    */
+   xTaskNotify(boilerTaskH, 0x20, eSetBits);
+   injectPowderPlusWater(dataBytes, 60, contsPowData);
+   xTaskNotify(boilerTaskH, 0x08, eSetBits);
 
 }
 
-void runDrink4(uint8_t *dataBytes){
+void runDrink4(uint8_t *dataBytes, ContsPowderData *contsPowData){
+
+
+
+    injectPowderPlusWater(dataBytes, 128, contsPowData);      
+    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+
+}
+
+void runDrink5(uint8_t *dataBytes, ContsPowderData *contsPowData){
+    xTaskNotify(boilerTaskH, 0x20, eSetBits);
+
+    vTaskDelay(pdMS_TO_TICKS(7000));
+
+    setRelay(dataBytes, SOLENOID_VALVE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(700));
     
-}
+    setRelay(dataBytes, PUMP);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
-void runDrink5(uint8_t *dataBytes){
 
+    vTaskDelay(pdMS_TO_TICKS(22000));
+
+
+    resetRelay(dataBytes, PUMP);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    resetRelay(dataBytes, SOLENOID_VALVE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    ESP_LOGE(CONTROL_TASK_TAG, "Inject only water: OFF");
+
+
+    /*
     setBrewer2InjectPosition(dataBytes);
 
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -67,9 +120,10 @@ void runDrink5(uint8_t *dataBytes){
     setBrewer2StartPosition(dataBytes);
 
     //injecBrewerWater(dataBytes, 280);   //280 is the max
+    */
 }
 
-void runDrink6(uint8_t *dataBytes){
+void runDrink6(uint8_t *dataBytes, ContsPowderData *contsPowData){
     setBrewer2InjectPosition(dataBytes);
 
     vTaskDelay(pdMS_TO_TICKS(5000));
@@ -77,16 +131,12 @@ void runDrink6(uint8_t *dataBytes){
     setBrewer2StartPosition(dataBytes);
 }
 
-void runDrink7(uint8_t *dataBytes){
-    xTaskNotify(boilerTaskH, 0x10, eSetBits);
-    injecBrewerWater(dataBytes, 193);
-    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+void runDrink7(uint8_t *dataBytes, ContsPowderData *contsPowData){
+
 }
 
-void runDrink8(uint8_t *dataBytes){
-    xTaskNotify(boilerTaskH, 0x10, eSetBits);
-    injecBrewerWater(dataBytes, 78);
-    xTaskNotify(boilerTaskH, 0x08, eSetBits);
+void runDrink8(uint8_t *dataBytes, ContsPowderData *contsPowData){
+    //calculatePulseTime(dataBytes);
 }
 
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
@@ -259,55 +309,45 @@ static void resetRelay(uint8_t *byteData, const OutputRelays outputRelays){
     }
 }
 
-static void resetPulseCount(){
-    xTaskNotify(intTaskH, 0x01, eSetBits);
-}
-
 static void checkAirBreak(uint8_t *dataBytes){
 
     InputSwStruct inputSwStruct;    
 
-    bool doCheck = true;
-    bool onError = false;
-    int8_t count2Error = 0;
-
     if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
 
         if(inputSwStruct.airBreakSw){
-            vTaskDelay(pdMS_TO_TICKS(30)); 
+
+            setRelay(dataBytes, WATER_INLET_VALVE);
+            writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+            ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
+
+            xTaskNotify(intTaskH, 0x01, eSetBits);                  //notify interrupt task for water flow control
+
+            vTaskDelay(pdMS_TO_TICKS(100)); 
+
+            bool onWait = true;
+            uint32_t ulNotifiedValue = 0;
+            
             do{
-                if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
-                    if(inputSwStruct.airBreakSw){
-                        setRelay(dataBytes, WATER_INLET_VALVE);
-                        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
-                        ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
 
-                        vTaskDelay(pdMS_TO_TICKS(30)); 
-                    }
-                    else{
-                        resetRelay(dataBytes, WATER_INLET_VALVE);
-                        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
-                        ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
+                xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
 
-                        vTaskDelay(pdMS_TO_TICKS(30));
+                if((ulNotifiedValue & 0x10) >> 4){
 
-                        doCheck = false;
-                    }
+                    resetRelay(dataBytes, WATER_INLET_VALVE);
+                    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+                    vTaskDelay(pdMS_TO_TICKS(30));
+
+                    ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
+
+                    onWait = false;
                 }
 
-                vTaskDelay(pdMS_TO_TICKS(400));
+            }while(onWait);
 
-                if(!onError && (++count2Error > 12)){            //18                //after 8280 mS send erro message to ui
-                    onError = true;
-                    xTaskNotify(uiTaskH, 0x02, eSetBits); 
-                }
-
-            }while(doCheck);
+            ESP_LOGI(CONTROL_TASK_TAG, "END AIRBREAK CHECK");
         }
     }
-
-    if(onError)
-        xTaskNotify(uiTaskH, 0x01, eSetBits);
 
 }
 
@@ -375,7 +415,7 @@ void setBrewer2InjectPosition(uint8_t *dataBytes){
 
 }
 
-void injecBrewerWater(uint8_t *dataBytes, uint16_t pulses){
+void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
 
     uint32_t ulNotifiedValue = 0;
     bool onWait = true;
@@ -415,6 +455,228 @@ void injecBrewerWater(uint8_t *dataBytes, uint16_t pulses){
 
     ESP_LOGE(CONTROL_TASK_TAG, "Inject brewer water: OFF");
 }
+
+static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, ContsPowderData *contsPowData){
+
+    uint32_t ulNotifiedValue = 0;
+    bool onWait = true; 
+    bool gramsTimeGreaterThanHeatTime = true;
+    bool withPreGramsTime = false;
+    bool preHeatOn = false;
+    bool prePowderOn = false;
+
+    int targetGrams = 40;                                                       //** 40 gr
+    double preHeatTime = 7000000;                                               //** 7 sec
+
+
+    double refTime = 0;
+
+    double totalTime = contsPowData->timePerPulse * pulses;
+    double gramsTime = (targetGrams / contsPowData->grPerSecCon1) * 1000000;
+    double onlyGramsTime = gramsTime - totalTime;
+
+    ESP_LOGI(CONTROL_TASK_TAG, "Inject powder water: ON - %lf - %lf = %lf", totalTime, gramsTime, onlyGramsTime);
+
+
+    setRelay(dataBytes, DOSER_DEVICE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(21818));
+
+    resetRelay(dataBytes, DOSER_DEVICE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    /*
+
+    setRelay(dataBytes, SOLENOID_VALVE_2);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+
+    if(onlyGramsTime > 0){
+        withPreGramsTime = true;
+
+        if(onlyGramsTime <= preHeatTime){
+            gramsTimeGreaterThanHeatTime = false;
+            refTime = preHeatTime;
+            xTaskNotify(boilerTaskH, 0x20, eSetBits);                                       //set boiler to HOT MAX
+        }
+        else{
+            refTime = onlyGramsTime;
+            setRelay(dataBytes, DOSER_DEVICE_1);
+            writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+        }
+
+    }
+    else{
+        refTime = preHeatTime;
+        xTaskNotify(boilerTaskH, 0x20, eSetBits);                                       //set boiler to HOT MAX
+    }
+
+
+
+    do{
+        vTaskDelay(pdMS_TO_TICKS(100));  
+
+        refTime -= 100000;
+
+        if(withPreGramsTime){
+            if(gramsTimeGreaterThanHeatTime){
+                if(refTime <= preHeatTime && !preHeatOn){
+                    preHeatOn = true;
+                    xTaskNotify(boilerTaskH, 0x20, eSetBits);                                       //set boiler to HOT MAX    
+                }
+            }
+            else{
+                if(refTime <= onlyGramsTime && !prePowderOn){
+                    prePowderOn = true;
+                    setRelay(dataBytes, DOSER_DEVICE_1);
+                    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+                }
+            }
+        
+        }
+        
+        if(refTime <= 0)
+            onWait = false;
+
+    }while(onWait);
+
+    onWait = true;
+
+    //vTaskDelay(pdMS_TO_TICKS(7000));
+
+    if(!withPreGramsTime){
+        setRelay(dataBytes, DOSER_DEVICE_1);
+        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+        vTaskDelay(pdMS_TO_TICKS(700)); 
+    }
+
+    
+    setRelay(dataBytes, PUMP);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    refTime = esp_timer_get_time();
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+
+    setRelay(dataBytes, WHIPPER);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+
+    xQueueSend(xQueueInputPulse, (void *) &pulses, portMAX_DELAY);
+
+    do{
+        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+        if((ulNotifiedValue & 0x08) >> 3){
+            onWait = false;
+
+            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP - %lf", (esp_timer_get_time() - refTime));
+        }
+
+    }while(onWait);
+
+
+    resetRelay(dataBytes, PUMP);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+
+    resetRelay(dataBytes, DOSER_DEVICE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    ESP_LOGI(CONTROL_TASK_TAG, "EXTRA TIME - %lf", (esp_timer_get_time() - refTime));
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+
+    resetRelay(dataBytes, SOLENOID_VALVE_2);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    resetRelay(dataBytes, WHIPPER);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
+    */
+
+    ESP_LOGE(CONTROL_TASK_TAG, "Inject powder water: OFF");
+}
+
+
+
+/*
+static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, ContsPowderData *contsPowData){
+
+    uint32_t ulNotifiedValue = 0;
+    bool onWait = true;
+    int targetGrams = 40;
+    double refTime = 0;
+
+    double totalTime = contsPowData->timePerPulse * pulses;
+
+    ESP_LOGI(CONTROL_TASK_TAG, "Inject powder water: ON - %lf", totalTime);
+
+    setRelay(dataBytes, SOLENOID_VALVE_2);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(700)); //700
+
+    setRelay(dataBytes, DOSER_DEVICE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+    
+    setRelay(dataBytes, PUMP);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    refTime = esp_timer_get_time();
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+
+    setRelay(dataBytes, WHIPPER);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+
+    //vTaskDelay(pdMS_TO_TICKS(22000));
+    xQueueSend(xQueueInputPulse, (void *) &pulses, portMAX_DELAY);
+
+    do{
+        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+        if((ulNotifiedValue & 0x08) >> 3){
+            onWait = false;
+
+            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP - %lf", (esp_timer_get_time() - refTime));
+        }
+
+    }while(onWait);
+
+
+    resetRelay(dataBytes, PUMP);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+
+    resetRelay(dataBytes, DOSER_DEVICE_1);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    ESP_LOGI(CONTROL_TASK_TAG, "EXTRA TIME - %lf", (esp_timer_get_time() - refTime));
+
+    vTaskDelay(pdMS_TO_TICKS(700));
+
+    resetRelay(dataBytes, SOLENOID_VALVE_2);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    resetRelay(dataBytes, WHIPPER);
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+    ESP_LOGE(CONTROL_TASK_TAG, "Inject powder water: OFF");
+
+
+}
+*/
+
 
 static void grindAndDeliver(uint8_t *dataBytes){
 
@@ -471,6 +733,80 @@ static void grindAndDeliver(uint8_t *dataBytes){
 
         ESP_LOGI(CONTROL_TASK_TAG, "Coffee released :)");
     }
+
+}
+
+void calculatePulseTime(uint8_t *dataBytes){
+
+    bool onWait = true;
+    uint16_t pulses = 20;
+    uint32_t ulNotifiedValue = 0;
+    double pulseTimeArray[] = {0, 0, 0};
+
+
+    for(size_t i = 0; i < 4; i++){
+
+        if(i != 0)
+            xTaskNotify(intTaskH, 0x02, eSetBits);
+
+        setRelay(dataBytes, SOLENOID_VALVE_2);
+        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+        vTaskDelay(pdMS_TO_TICKS(700)); 
+    
+        setRelay(dataBytes, PUMP);
+        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+        xQueueSend(xQueueInputPulse, (void *) &pulses, portMAX_DELAY);
+
+        do{
+            xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+            if((ulNotifiedValue & 0x08) >> 3)
+                onWait = false;
+
+        }while(onWait);
+
+        resetRelay(dataBytes, PUMP);
+        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        resetRelay(dataBytes, SOLENOID_VALVE_2);
+        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+
+        onWait = true;
+
+        if(i != 0){
+            do{
+                vTaskDelay(pdMS_TO_TICKS(200));
+
+                if(xQueueReceive(xQueueInputTimePerPulse, (void *) &pulseTimeArray[i-1], pdMS_TO_TICKS(10)) == pdPASS){
+                    onWait = false;
+                    ESP_LOGI(CONTROL_TASK_TAG, "pulseTime -> %lf", pulseTimeArray[i-1]);
+                }
+
+            }while(onWait);
+        }
+
+        pulses = 100;
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+
+    double totalTime = pulseTimeArray[0];
+
+    for(size_t i = 1; i < 3; i++)
+        totalTime += pulseTimeArray[i];
+
+    totalTime /= 3;
+
+    ESP_LOGW(CONTROL_TASK_TAG, "times: %lf - %lf - %lf = %lf", 
+                pulseTimeArray[0], pulseTimeArray[1], pulseTimeArray[2], totalTime);
+
+
+    ESP_LOGE(CONTROL_TASK_TAG, "Pulse time test: OFF");
+
 
 }
 
@@ -616,6 +952,7 @@ static void controlTask(void *pvParameters){
 
     float boilerT = 0;
     ControlState controlState = IDLE_C;
+    ContsPowderData conPowderData = {1.8333f, 1.8333f, 1.8333f, 80737.37};
 
     uint8_t *outputIO_Buff = (uint8_t *)malloc(2);
 
@@ -651,35 +988,35 @@ static void controlTask(void *pvParameters){
                 controlState = IDLE_C;
             break;
             case DRINK_1_C:
-                runDrink1(outputIO_Buff);
+                runDrink1(outputIO_Buff, &conPowderData);
                 controlState = IDLE_C;
             break;
             case DRINK_2_C:
-                runDrink2(outputIO_Buff);
+                runDrink2(outputIO_Buff, &conPowderData);
                 controlState = IDLE_C;
             break;
             case DRINK_3_C:
-                runDrink3(outputIO_Buff);
+                runDrink3(outputIO_Buff, &conPowderData);
                 controlState = IDLE_C;
             break;
             case DRINK_4_C:
-                runDrink4(outputIO_Buff);
+                runDrink4(outputIO_Buff, &conPowderData);
                 controlState = IDLE_C;
             break;
             case DRINK_5_C:
-                runDrink5(outputIO_Buff);
+                runDrink5(outputIO_Buff, &conPowderData);
                 controlState = IDLE_C;
             break;
             case DRINK_6_C:
-                runDrink6(outputIO_Buff);
+                runDrink6(outputIO_Buff, &conPowderData);
                 controlState = IDLE_C;
             break;
             case DRINK_7_C:
-                runDrink7(outputIO_Buff);
+                runDrink7(outputIO_Buff, &conPowderData);
                 controlState = IDLE_C;
             break;
             case DRINK_8_C:
-                runDrink8(outputIO_Buff);
+                runDrink8(outputIO_Buff, &conPowderData);
                 controlState = IDLE_C;
             break;
         }
