@@ -900,6 +900,234 @@ static void checkQueuesFromUi(ControlState *controlState){
     }
 }
 
+static void initMemData(Recipe *recipeData, SystemData *sysData){
+    nvs_handle_t nvsHandle;
+    esp_err_t err;
+
+    uint8_t u8Data = 0;
+    uint16_t u16Data = 0;
+    uint32_t u32Data = 0;
+ 
+    char *namespaceName = (char *)malloc(10);
+    strcpy(namespaceName, "recipe0");
+
+    char *enableKey = (char *)malloc(10);
+    strcpy(enableKey, "enable0");
+
+    char *moduleTypeKey = (char *)malloc(13);
+    strcpy(moduleTypeKey, "moduleType0");
+
+    char *preReadyKey = (char *)malloc(11);
+    strcpy(preReadyKey, "preReady0");
+
+    char *pulsesKey = (char *)malloc(10);
+    strcpy(pulsesKey, "pulses0");
+
+    char *grKey = (char *)malloc(5);
+    strcpy(grKey, "gr0");
+
+    char *nameStr = (char *)malloc(17);
+    strcpy(nameStr, "recipe_0");        //max 16 chars
+
+    
+    for(size_t i = 0; i < 13; i++){                     //13
+        if(i < 9){
+            namespaceName[6] = (char)(i + 49);
+            nameStr[7] = (char)(i + 49);
+        }
+        else{
+            namespaceName[6] = '1';
+            namespaceName[7] = (char)(i + 39);
+            namespaceName[8] = '\0';
+
+            nameStr[7] = '1';
+            nameStr[8] = (char)(i + 39);
+            nameStr[9] = '\0';
+        }
+
+        err = nvs_open(namespaceName, NVS_READONLY, &nvsHandle);
+
+        if(err == ESP_ERR_NVS_NOT_FOUND){
+            err = nvs_open(namespaceName, NVS_READWRITE, &nvsHandle);
+
+            if(err == ESP_OK){
+
+                for(size_t j = 0; j < 5; j++){
+
+                    char charNum = (char)(j + 48);
+
+                    enableKey[6] = charNum;
+                    moduleTypeKey[10] = charNum;
+                    preReadyKey[8] = charNum;
+                    pulsesKey[6] = charNum;
+                    grKey[2] = charNum;
+
+                    nvs_set_u8(nvsHandle, enableKey, 0);
+                    nvs_set_u8(nvsHandle, moduleTypeKey, 0);
+                    nvs_set_u8(nvsHandle, preReadyKey, 0);
+                    nvs_set_u8(nvsHandle, pulsesKey, 0);
+                    nvs_set_u8(nvsHandle, grKey, 0);
+
+                    ESP_LOGI(CONTROL_TASK_TAG, "%s KEYS: %s %s %s %s %s",
+                                nameStr, enableKey, moduleTypeKey, preReadyKey, pulsesKey, grKey);
+
+                }
+
+                nvs_set_u16(nvsHandle, "counter", 0);
+
+                if(nvs_commit(nvsHandle) != ESP_OK)
+                    ESP_LOGE(CONTROL_TASK_TAG, "NVS Commit error on %s", namespaceName);
+
+                err = nvs_set_str(nvsHandle, "recipeName", nameStr);
+
+                if(err == ESP_OK){
+                    err = nvs_commit(nvsHandle);
+
+                    if(err == ESP_OK)
+                        ESP_LOGE(CONTROL_TASK_TAG, "NVS %s successfully created!", namespaceName);
+                }
+                else
+                    ESP_LOGE(CONTROL_TASK_TAG, "Error: can't set nvt str!");
+
+                nvs_close(nvsHandle);
+
+                err = nvs_open(namespaceName, NVS_READONLY, &nvsHandle);
+            }
+        }//END if(err == ESP_ERR_NVS_NOT_FOUND)
+
+
+        if(err == ESP_OK){
+            
+            size_t strLen;
+
+            nvs_get_str(nvsHandle, "recipeName", NULL, &strLen);
+
+            char *tempStr = (char *)malloc(strLen);
+            memset(tempStr, 0, strLen);
+
+            err = nvs_get_str(nvsHandle, "recipeName", tempStr, &strLen);
+
+            recipeData[i].recipeName = (char *)malloc(strLen);
+            
+            if(err == ESP_OK)
+                strcpy(recipeData[i].recipeName, tempStr);
+            else        
+                ESP_LOGE(CONTROL_TASK_TAG, "Error %s: can't get nvt str! %s", namespaceName, esp_err_to_name(err));
+            
+
+            free(tempStr);
+
+            nvs_get_u16(nvsHandle, "counter", &u16Data);
+
+            recipeData[i].recipeCounter = u16Data;
+
+
+            strLen = 0;
+            for(size_t j = 0; j < 5; j++){
+                char charNum = (char)(j + 48);
+
+                enableKey[6] = charNum;
+
+                nvs_get_u8(nvsHandle, enableKey, &u8Data);
+
+                if(u8Data == 1)
+                    strLen++;
+
+            }
+
+            recipeData[i].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * strLen);
+
+            size_t k = 0;
+            for(size_t j = 0; j < 5; j++){
+                char charNum = (char)(j + 48);
+
+                enableKey[6] = charNum;
+                moduleTypeKey[10] = charNum;
+                preReadyKey[8] = charNum;
+                pulsesKey[6] = charNum;
+                grKey[2] = charNum;
+
+                err = nvs_get_u8(nvsHandle, enableKey, &u8Data);
+
+                if(u8Data == 1){
+
+                    nvs_get_u8(nvsHandle, moduleTypeKey, &u8Data);
+                    recipeData[i].modulesArray[k].moduleType = (RecipeModuleType)u8Data;
+
+                    nvs_get_u8(nvsHandle, preReadyKey, &u8Data);
+                    recipeData[i].modulesArray[k].preReady = (bool)u8Data;
+
+                    nvs_get_u8(nvsHandle, pulsesKey, &u8Data);
+                    recipeData[i].modulesArray[k].pulses = u8Data;
+
+                    nvs_get_u8(nvsHandle, grKey, &u8Data);
+                    recipeData[i].modulesArray[k++].gr = u8Data;
+
+                }
+            }
+            
+            nvs_close(nvsHandle);
+        }
+    }
+
+    strcpy(namespaceName, "sysData");
+
+    err = nvs_open(namespaceName, NVS_READONLY, &nvsHandle);
+
+    if(err == ESP_ERR_NVS_NOT_FOUND){
+        err = nvs_open(namespaceName, NVS_READWRITE, &nvsHandle);
+
+        if(err == ESP_OK){
+            nvs_set_u8(nvsHandle, "boilerTemp", 91);
+            nvs_set_u16(nvsHandle, "password", 1234);
+            nvs_set_u32(nvsHandle, "mCounter", 0);
+
+
+            if(nvs_commit(nvsHandle) == ESP_OK)
+                ESP_LOGE(CONTROL_TASK_TAG, "NVS %s successfully created!", namespaceName);
+            else
+                ESP_LOGE(CONTROL_TASK_TAG, "NVS Commit error on %s", namespaceName);
+
+            nvs_close(nvsHandle);
+
+            err = nvs_open(namespaceName, NVS_READONLY, &nvsHandle);
+        }
+    }
+
+    if(err == ESP_OK){
+        nvs_get_u8(nvsHandle, "boilerTemp", &u8Data);
+        sysData->boilerTemperature = u8Data;
+        
+        nvs_get_u16(nvsHandle, "password", &u16Data);
+        sysData->password = u16Data;
+
+        nvs_get_u32(nvsHandle, "mConuter", &u32Data);
+        sysData->mainCounter = u32Data;
+
+        nvs_close(nvsHandle);
+    }
+
+
+    free(namespaceName);
+    free(enableKey);
+    free(moduleTypeKey);
+    free(preReadyKey);
+    free(pulsesKey);
+    free(grKey);
+    free(nameStr);
+}
+
+
+static void checkMemContent(const Recipe *recipeData, const SystemData *sysData){
+    int aSize = sizeof(Recipe);
+
+    for(size_t i = 0; i < 13; i++)
+        ESP_LOGI(CONTROL_TASK_TAG, "-> %s ", recipeData[i].recipeName);
+
+    ESP_LOGI(CONTROL_TASK_TAG, "--> %d - %d - %lu", sysData->boilerTemperature, sysData->password, sysData->mainCounter);
+    
+}
+
 
 void initI2C_MCP23017_Out(){
 
@@ -950,13 +1178,21 @@ void initControlTask(){
 
 static void controlTask(void *pvParameters){
 
-    float boilerT = 0;
     ControlState controlState = IDLE_C;
     ContsPowderData conPowderData = {1.8333f, 1.8333f, 1.8333f, 80737.37};
+
+    Recipe *recipeList = (Recipe *)malloc(sizeof(Recipe) * 13);
+    SystemData systemData;
 
     uint8_t *outputIO_Buff = (uint8_t *)malloc(2);
 
     memset(outputIO_Buff, 0, 2);
+
+    initMemData(recipeList, &systemData);
+
+    xQueueSend(xQueueData2Boiler, (void *) &systemData.boilerTemperature, (TickType_t) 10);
+
+    //checkMemContent(recipeList, &systemData);
 
     checkAirBreak(outputIO_Buff);
 

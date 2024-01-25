@@ -88,6 +88,8 @@ typedef struct PID_Struct{
 static bool readMCP3421_ADC(uint16_t *adcValue);
 static void readTemp(BoilerStructData *boilerStructData);
 static void wait4Control();
+static void wait4BoilerTempValue(float *targetTemperature, PID_DataStruct *pidDataStruct);
+static void check4BoilerTempUpdate(float *targetTemperature, PID_DataStruct *pidDataStruct);
 static void checkNotifications4Boiler(BoilerState *bState);
 static void getMessage2Send2Nextion(char *strData, BoilerStructData *boilerStructData);
 static bool checkDataFromNextionPID_Tunner(PID_DataStruct *pidDataStruct);

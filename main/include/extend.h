@@ -121,6 +121,35 @@ typedef enum {
     BREWER_ISSUE
 } ErrorCode;
 
+typedef enum {
+    COFFEE_M = 0,
+    POWDER_A_M,
+    POWDER_B_M,
+    POWDER_C_M,
+    WATER
+} RecipeModuleType;
+
+typedef struct ModuleDataStruct{
+    RecipeModuleType    moduleType;
+    bool                preReady;
+    uint8_t             pulses;
+    uint8_t             gr;                      
+} RecipeModuleStruct;
+
+
+typedef struct RecipeDataStruct{
+    char                *recipeName;
+    RecipeModuleStruct  *modulesArray;
+    uint16_t            recipeCounter;
+} Recipe;
+
+
+typedef struct SystemDataSruct{
+    uint8_t     boilerTemperature;
+    uint16_t    password;
+    uint32_t    mainCounter;
+} SystemData;
+
 typedef struct InputBoolStruct{
     bool    wasteOverflowSw;
     bool    coffeeBrewerSw;
@@ -168,6 +197,7 @@ extern QueueHandle_t xQueueInputBtns;
 extern QueueHandle_t xQueueInputPulse;
 extern QueueHandle_t xQueueInputTimePerPulse;
 extern QueueHandle_t xQueueBoilerTemp;
+extern QueueHandle_t xQueueData2Boiler;
 extern QueueHandle_t xQueueSpp;
 
 

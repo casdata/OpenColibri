@@ -84,6 +84,26 @@ static void wait4Control(){
 }
 
 
+static void wait4BoilerTempValue(float *targetTemperature, PID_DataStruct *pidDataStruct){
+    //portMAX_DELAY
+    uint8_t tempTemp = 0;
+
+    if(xQueueReceive(xQueueData2Boiler, &tempTemp, portMAX_DELAY) == pdPASS){
+        *targetTemperature = (float)tempTemp;
+        pidDataStruct->setPoint = *targetTemperature - 3.0f;
+    }
+    
+}
+
+static void check4BoilerTempUpdate(float *targetTemperature, PID_DataStruct *pidDataStruct){
+    uint8_t tempTemp = 0;
+
+    if(xQueueReceive(xQueueData2Boiler, &tempTemp, pdMS_TO_TICKS(15)) == pdPASS){
+        *targetTemperature = (float)tempTemp;
+        pidDataStruct->setPoint = *targetTemperature - 3.0f;
+    }
+}
+
 static void checkNotifications4Boiler(BoilerState *bState){
     uint32_t ulNotifiedValue = 0;
 
@@ -360,14 +380,17 @@ void initBoilerTask(){
 
 static void boilerTask(void *pvParameters){
 
-    float targetTemp = 91.0f;
+    float targetTemp = 70.0f;       //91.0f
 
     BoilerState boilerState = INIT_B;
     BoilerStructData boilerStructData = {true, false, true, 0.0f, 0.0f};
     PID_DataStruct myPID_Data = {true, 87.0f, 220.0f, 0.0f, 120.0f, 0.0f, 8191.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0};
     myPID_Data.setPoint = targetTemp - 3.0f;
+    
 
     char *tempBuff = malloc(60);
+
+    wait4BoilerTempValue(&targetTemp, &myPID_Data);
 
     wait4Control();
 
@@ -379,6 +402,8 @@ static void boilerTask(void *pvParameters){
 
     while(1){
         checkNotifications4Boiler(&boilerState);
+
+        check4BoilerTempUpdate(&targetTemp, &myPID_Data);
 
         readTemp(&boilerStructData);
 

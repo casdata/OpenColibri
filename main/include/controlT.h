@@ -59,6 +59,8 @@ static void waitBoiler2Start();
 static void startBoilerTask();
 static void syncronizeAllTasks();
 static void checkQueuesFromUi(ControlState *controlState);
+static void initMemData(Recipe *recipeData, SystemData *sysData);
+static void checkMemContent(const Recipe *recipeData, const SystemData *sysData);
 
 void initI2C_MCP23017_Out();
 void initI2C_MCP23017_In();
