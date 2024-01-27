@@ -10,15 +10,17 @@ typedef enum{
     IDLE_C,
     MAINTENANCE_C,
     CLEAN_C,
-    DRINK_1_C,
-    DRINK_2_C,
-    DRINK_3_C,
-    DRINK_4_C,
-    DRINK_5_C,
-    DRINK_6_C,
-    DRINK_7_C,
-    DRINK_8_C    
+    DRINK_C,
+    WATER_C,
+    SWAP_PAGE_C
 } ControlState;
+
+
+typedef struct ControlDataStruct{
+    ControlState    controlState;
+    uint8_t         recipeIndex;
+    Page            page;
+} ControlData;
 
 typedef struct ContainerPowStruct
 {
@@ -31,14 +33,16 @@ typedef struct ContainerPowStruct
 
 extern TaskHandle_t controlTaskH;
 
-static void runDrink1(uint8_t *dataBytes, ContsPowderData *contsPowData);
-static void runDrink2(uint8_t *dataBytes, ContsPowderData *contsPowData);
-static void runDrink3(uint8_t *dataBytes, ContsPowderData *contsPowData);
-static void runDrink4(uint8_t *dataBytes, ContsPowderData *contsPowData);
-static void runDrink5(uint8_t *dataBytes, ContsPowderData *contsPowData);
-static void runDrink6(uint8_t *dataBytes, ContsPowderData *contsPowData);
-static void runDrink7(uint8_t *dataBytes, ContsPowderData *contsPowData);
-static void runDrink8(uint8_t *dataBytes, ContsPowderData *contsPowData);
+static void runDrink1(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
+static void runDrink2(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
+static void runDrink3(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
+static void runDrink4(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
+static void runDrink5(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
+static void runDrink6(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
+static void runDrink7(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
+static void runDrink8(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
+static void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, ContsPowderData *contsPowData);
+static void runWater(uint8_t *dataBytes);
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
 static bool bitChangedInByte(uint8_t *byteData, const uint8_t bitPos, const bool newValue);
 static bool differentRelayState(uint8_t *byteData, const OutputRelays outputRelays, const bool newValue);
@@ -58,7 +62,7 @@ static void waitMachine2Start(uint8_t *dataBytes);
 static void waitBoiler2Start();
 static void startBoilerTask();
 static void syncronizeAllTasks();
-static void checkQueuesFromUi(ControlState *controlState);
+static void checkQueuesFromUi(ControlData *controlData);
 static void initMemData(Recipe *recipeData, SystemData *sysData);
 static void checkMemContent(const Recipe *recipeData, const SystemData *sysData);
 

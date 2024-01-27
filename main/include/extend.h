@@ -141,6 +141,7 @@ typedef struct RecipeDataStruct{
     char                *recipeName;
     RecipeModuleStruct  *modulesArray;
     uint16_t            recipeCounter;
+    size_t              moduleSize;
 } Recipe;
 
 
@@ -172,6 +173,17 @@ typedef struct Input2BoolStruct{
     bool    btnB;
 } InputBtnStruct;
 
+typedef enum{
+    PAGE_1 = 0,
+    PAGE_2
+} Page;
+
+typedef struct UI_DataStruct{
+    Page    page;
+    float   boilerTempUi;
+    char    *strData;
+} UiData;
+
 /*
 typedef struct OutputBoolStruct{
     bool    solenoidValve2;
@@ -197,6 +209,7 @@ extern QueueHandle_t xQueueInputBtns;
 extern QueueHandle_t xQueueInputPulse;
 extern QueueHandle_t xQueueInputTimePerPulse;
 extern QueueHandle_t xQueueBoilerTemp;
+extern QueueHandle_t xQueueUI;
 extern QueueHandle_t xQueueData2Boiler;
 extern QueueHandle_t xQueueSpp;
 

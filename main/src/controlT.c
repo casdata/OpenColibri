@@ -3,6 +3,39 @@
 
 TaskHandle_t controlTaskH = NULL;
 
+void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, ContsPowderData *contsPowData){
+    
+
+    
+    for(size_t i = 0; i < myRecipe->moduleSize; i++){
+        
+        switch(myRecipe->modulesArray[i].moduleType){
+            case COFFEE_M:
+
+            break;
+            case POWDER_A_M:
+
+            break;
+            case POWDER_B_M:
+
+            break;
+            case POWDER_C_M:
+
+            break;
+            case WATER:
+
+            break;
+        }
+
+    }
+
+
+}
+
+void runWater(uint8_t *dataBytes){
+
+}
+
 void runDrink1(uint8_t *dataBytes, ContsPowderData *contsPowData){
 
     grindAndDeliver(dataBytes);
@@ -858,34 +891,72 @@ static void syncronizeAllTasks(){
 
 }
 
-static void checkQueuesFromUi(ControlState *controlState){
+static void checkQueuesFromUi(ControlData *controlData){
 
     InputBtnStruct tempInputBtnStruct;
 
     if(xQueueReceive(xQueueInputBtns, &tempInputBtnStruct, pdMS_TO_TICKS(10)) == pdPASS){
 
-        if(*controlState == IDLE_C){
+        if(controlData->controlState == IDLE_C){
 
-            if(tempInputBtnStruct.btn0)
-                *controlState = DRINK_1_C;
-            else if(tempInputBtnStruct.btn1)
-                *controlState = DRINK_2_C;
-            else if(tempInputBtnStruct.btn2)
-                *controlState = DRINK_3_C;
-            else if(tempInputBtnStruct.btn3)
-                *controlState = DRINK_4_C;
-            else if(tempInputBtnStruct.btn4)
-                *controlState = DRINK_5_C;
-            else if(tempInputBtnStruct.btn5)
-                *controlState = DRINK_6_C;
-            else if(tempInputBtnStruct.btn6)
-                *controlState = DRINK_7_C;
-            else if(tempInputBtnStruct.btn7)
-                *controlState = DRINK_8_C;
+            if(tempInputBtnStruct.btn0){
+                controlData->controlState = DRINK_C;
+                if(controlData->page == PAGE_1)
+                    controlData->recipeIndex = 0;
+                else
+                    controlData->recipeIndex = 7;
+            }
+            else if(tempInputBtnStruct.btn1){
+                controlData->controlState = DRINK_C;
+                if(controlData->page == PAGE_1)
+                    controlData->recipeIndex = 1;
+                else
+                    controlData->recipeIndex = 8;
+            }
+            else if(tempInputBtnStruct.btn2){
+                controlData->controlState = DRINK_C;
+                if(controlData->page == PAGE_1)
+                    controlData->recipeIndex = 2;
+                else
+                    controlData->recipeIndex = 9;
+            }
+            else if(tempInputBtnStruct.btn3){
+                controlData->controlState = DRINK_C;
+                if(controlData->page == PAGE_1)
+                    controlData->recipeIndex = 3;
+                else
+                    controlData->recipeIndex = 10;
+            }
+            else if(tempInputBtnStruct.btn4){
+                controlData->controlState = DRINK_C;
+                if(controlData->page == PAGE_1)
+                    controlData->recipeIndex = 4;
+                else
+                    controlData->recipeIndex = 11;
+            }
+            else if(tempInputBtnStruct.btn5){
+                controlData->controlState = DRINK_C;
+                if(controlData->page == PAGE_1)
+                    controlData->recipeIndex = 5;
+                else
+                    controlData->recipeIndex = 12;
+            }
+            else if(tempInputBtnStruct.btn6){
+                if(controlData->page == PAGE_1){
+                    controlData->recipeIndex = 6;
+                    controlData->controlState = DRINK_C;
+                }
+                else
+                    controlData->controlState = WATER_C;
+                
+            }
+            else if(tempInputBtnStruct.btn7){
+                controlData->controlState = SWAP_PAGE_C;
+            }
             else if(tempInputBtnStruct.btnA)
-                *controlState = CLEAN_C;
+                controlData->controlState = CLEAN_C;
             else if(tempInputBtnStruct.btnB)
-                *controlState = MAINTENANCE_C;
+                controlData->controlState = MAINTENANCE_C;
             
             /*
             ESP_LOGE(CONTROL_TASK_TAG, "-> %d %d %d %d %d %d %d %d %d %d",
@@ -1036,6 +1107,7 @@ static void initMemData(Recipe *recipeData, SystemData *sysData){
             }
 
             recipeData[i].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * strLen);
+            recipeData[i].moduleSize = strLen;
 
             size_t k = 0;
             for(size_t j = 0; j < 5; j++){
@@ -1178,11 +1250,15 @@ void initControlTask(){
 
 static void controlTask(void *pvParameters){
 
-    ControlState controlState = IDLE_C;
+    ControlData controlData = {IDLE_C, 0, PAGE_1};
     ContsPowderData conPowderData = {1.8333f, 1.8333f, 1.8333f, 80737.37};
 
     Recipe *recipeList = (Recipe *)malloc(sizeof(Recipe) * 13);
     SystemData systemData;
+    UiData uiDataControl = {PAGE_1, 0};
+
+    uiDataControl.strData = (char *)malloc(17);
+    memset(uiDataControl.strData, 0, 17);
 
     uint8_t *outputIO_Buff = (uint8_t *)malloc(2);
 
@@ -1206,54 +1282,62 @@ static void controlTask(void *pvParameters){
 
     //syncronizeAllTasks();
 
+    xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
+
     ESP_LOGI(CONTROL_TASK_TAG, "ONLINE");
 
 
     while(true){
 
-        checkQueuesFromUi(&controlState);
+        checkQueuesFromUi(&controlData);
 
-        switch(controlState){
+        switch(controlData.controlState){
             case IDLE_C:
 
             break;
             case MAINTENANCE_C:
-                controlState = IDLE_C;
+
+                controlData.controlState = IDLE_C;
             break;
             case CLEAN_C:
-                controlState = IDLE_C;
+
+                controlData.controlState = IDLE_C;
             break;
-            case DRINK_1_C:
-                runDrink1(outputIO_Buff, &conPowderData);
-                controlState = IDLE_C;
+            case DRINK_C:
+                strcpy(uiDataControl.strData, recipeList[controlData.recipeIndex].recipeName);
+                xQueueSend(xQueueUI, (void *) &uiDataControl, (TickType_t) 10);
+
+                xTaskNotify(uiTaskH, 0x100, eSetBits);                   //Set ui task to preparing drink state
+
+                runDrink(&recipeList[controlData.recipeIndex], outputIO_Buff, &conPowderData);
+
+                xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
+                
+                controlData.controlState = IDLE_C;
             break;
-            case DRINK_2_C:
-                runDrink2(outputIO_Buff, &conPowderData);
-                controlState = IDLE_C;
+            case WATER_C:
+                strcpy(uiDataControl.strData, " Water");
+                xQueueSend(xQueueUI, (void *) &uiDataControl, (TickType_t) 10);
+
+                xTaskNotify(uiTaskH, 0x100, eSetBits);                   //Set ui task to preparing drink state
+
+                runWater(outputIO_Buff);
+
+                xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
+
+                controlData.controlState = IDLE_C;
             break;
-            case DRINK_3_C:
-                runDrink3(outputIO_Buff, &conPowderData);
-                controlState = IDLE_C;
-            break;
-            case DRINK_4_C:
-                runDrink4(outputIO_Buff, &conPowderData);
-                controlState = IDLE_C;
-            break;
-            case DRINK_5_C:
-                runDrink5(outputIO_Buff, &conPowderData);
-                controlState = IDLE_C;
-            break;
-            case DRINK_6_C:
-                runDrink6(outputIO_Buff, &conPowderData);
-                controlState = IDLE_C;
-            break;
-            case DRINK_7_C:
-                runDrink7(outputIO_Buff, &conPowderData);
-                controlState = IDLE_C;
-            break;
-            case DRINK_8_C:
-                runDrink8(outputIO_Buff, &conPowderData);
-                controlState = IDLE_C;
+            case SWAP_PAGE_C:
+                if(controlData.page == PAGE_1)
+                    controlData.page = PAGE_2;
+                else
+                    controlData.page = PAGE_1;
+
+                uiDataControl.page = controlData.page;
+                
+                xQueueSend(xQueueUI, (void *) &uiDataControl, (TickType_t) 10);
+
+                controlData.controlState = IDLE_C;
             break;
         }
 

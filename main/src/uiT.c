@@ -480,15 +480,37 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
 }
 
 
-static void inBootingCodeState(float *bTemperature){
+static void checkQueue4Ui(UiData *myUiData, UiUpdate *myUiUpdate){
+    UiData tempUiData;
+
+
+    if(xQueueReceive(xQueueUI, &tempUiData, pdMS_TO_TICKS(10)) == pdPASS){
+
+        if(myUiData->page != tempUiData.page){
+            myUiData->page = tempUiData.page;
+            myUiUpdate->updatePage = true;
+        }
+
+
+        if(strcmp(myUiData->strData, tempUiData.strData) != 0){
+            strcpy(myUiData->strData, tempUiData.strData);
+            myUiUpdate->updateDataStr = true;
+        }
+
+    }
+
+}
+
+
+static void inBootingCodeState(UiData *myUiData){
 
     float newBoilerTemp = 0;
 
     getBoilerTemp(&newBoilerTemp);
 
-    if(newBoilerTemp != *bTemperature){
+    if(newBoilerTemp != myUiData->boilerTempUi){
 
-        *bTemperature = newBoilerTemp;
+        myUiData->boilerTempUi = newBoilerTemp;
 
         char *strTemperature = (char *) malloc(16);
         
@@ -508,6 +530,12 @@ static void inBootingCodeState(float *bTemperature){
     }
 
 }
+
+static void showPreparingDrinkName(UiData *myUiData){
+
+}
+
+
 
 
 static void inErrorCodeState(const ErrorCode errorCode){
@@ -595,7 +623,13 @@ void initUiTask(){
 static void uiTask(void *pvParameters){
 
     uint16_t uiSwitches = 0;
-    float bTemp = 0;                            //boiler temperature
+
+    UiUpdate uiUpdate = {false, false, false};
+
+    UiData uiData = {PAGE_1, 0.0f, NULL};
+    uiData.strData = (char *)malloc(17);
+    memset(uiData.strData, 0, 17);
+
     InputBtnStruct inputBtnStruct;
 
     UiState currentUiState = IDLE_UI;
@@ -603,8 +637,10 @@ static void uiTask(void *pvParameters){
 
     ErrorCode errorCode = NONE;
 
+    //double refTimeUi, cTimeUi;
+
     initLcd();
-    write2LCD("OpenColibri V002", 16, 0);
+    write2LCD("OpenColibri V003", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
@@ -614,11 +650,30 @@ static void uiTask(void *pvParameters){
 
         checkNotifications4Ui(&previousUiState, &currentUiState, &errorCode);
 
+        checkQueue4Ui(&uiData, &uiUpdate);
+
         if(updateUI(&inputBtnStruct))
             xQueueSend(xQueueInputBtns, (void *) &inputBtnStruct, portMAX_DELAY);
 
         switch(currentUiState){
             case IDLE_UI:
+                if(previousUiState != IDLE_UI){
+                    previousUiState = currentUiState;
+
+                    fullClearLcdScreen(); 
+                    write2LCD("?", 1, 8);      
+                }
+
+                if(uiUpdate.updatePage){
+                    uiUpdate.updatePage = false;
+
+                    fullClearLcdScreen();
+
+                    if(uiData.page == PAGE_1)
+                        write2LCD("1", 1, 8);
+                    else
+                        write2LCD("2", 1, 8);
+                }
 
             break;
             case BOOTING_UI:
@@ -629,16 +684,44 @@ static void uiTask(void *pvParameters){
                     write2LCD("Boiler: ", 8, 0);
                 }
 
-                inBootingCodeState(&bTemp);
+                inBootingCodeState(&uiData);
             break;
             case MAINTENANCE_UI:
-
+                
             break;
             case CLEAN_UI:
 
             break;
             case PREPARE_DRINK_UI:
+                if(previousUiState != PREPARE_DRINK_UI && uiUpdate.updateDataStr){
+                    previousUiState = currentUiState;
+                    uiUpdate.updateDataStr = false;
 
+                    fullClearLcdScreen();
+                    write2LCD(uiData.strData, strlen(uiData.strData), 0);
+
+                    /*
+                    if(uiUpdate.updateDataStr){
+                        uiUpdate.updateDataStr = false;
+
+                        fullClearLcdScreen();
+                        write2LCD(uiData.strData, strlen(uiData.strData), 0);
+
+                        refTimeUi = esp_timer_get_time();
+                    }
+                    else{
+                        cTime = esp_timer_get_time() - refTime;
+            
+                        if( cTime >= 15000000){      //15 seg
+                            previousUiState = currentUiState;
+
+                            fullClearLcdScreen();
+                            write2LCD("Preparing drink", 15, 0);
+
+                        }
+                    }
+                    */
+                }
             break;
             case ERROR_UI:
                 inErrorCodeState(errorCode);

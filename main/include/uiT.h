@@ -17,6 +17,12 @@ typedef enum{
     ERROR_UI
 } UiState;
 
+typedef struct UiUpdateStruct{
+    bool updatePage;
+    bool updateTemp;
+    bool updateDataStr;
+} UiUpdate;
+
 
 extern TaskHandle_t uiTaskH;
 extern uint8_t lcdMemPos;
@@ -38,7 +44,9 @@ static void setLcdPos(uint8_t x);
 static void getBoilerTemp(float *temperature);
 static bool updateUI(InputBtnStruct *uiBtns);
 static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiState, ErrorCode *errorCode);
-static void inBootingCodeState(float *bTemperature);
+static void checkQueue4Ui(UiData *myUiData, UiUpdate *myUiUpdate);
+static void showPreparingDrinkName(UiData *myUiData);
+static void inBootingCodeState(UiData *myUiData);
 static void inErrorCodeState(const ErrorCode errorCode);
 
 static void initLcd();
