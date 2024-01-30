@@ -132,7 +132,7 @@ typedef enum {
 typedef struct ModuleDataStruct{
     RecipeModuleType    moduleType;
     bool                preReady;
-    uint8_t             pulses;
+    uint16_t            pulses;
     uint8_t             gr;                      
 } RecipeModuleStruct;
 

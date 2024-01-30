@@ -687,10 +687,20 @@ static void uiTask(void *pvParameters){
                 inBootingCodeState(&uiData);
             break;
             case MAINTENANCE_UI:
-                
+                if(previousUiState != MAINTENANCE_UI){
+                    previousUiState = currentUiState;
+
+                    fullClearLcdScreen();
+                    write2LCD("Maintanance", 11, 1);
+                }
             break;
             case CLEAN_UI:
+                if(previousUiState != CLEAN_UI){
+                    previousUiState = currentUiState;
 
+                    fullClearLcdScreen();
+                    write2LCD("CLEANING....", 12, 1);
+                }
             break;
             case PREPARE_DRINK_UI:
                 if(previousUiState != PREPARE_DRINK_UI && uiUpdate.updateDataStr){

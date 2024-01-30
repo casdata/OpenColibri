@@ -6,6 +6,7 @@
 #include "interruptsT.h"
 #include "uiT.h"
 
+
 typedef enum{
     IDLE_C,
     MAINTENANCE_C,
@@ -42,7 +43,6 @@ static void runDrink6(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 
 static void runDrink7(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
 static void runDrink8(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
 static void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, ContsPowderData *contsPowData);
-static void runWater(uint8_t *dataBytes);
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
 static bool bitChangedInByte(uint8_t *byteData, const uint8_t bitPos, const bool newValue);
 static bool differentRelayState(uint8_t *byteData, const OutputRelays outputRelays, const bool newValue);
@@ -55,16 +55,23 @@ static void resetBrewer(uint8_t *dataBytes);
 static void setBrewer2StartPosition(uint8_t *dataBytes);
 static void setBrewer2InjectPosition(uint8_t *dataBytes);
 static void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses);
-static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, ContsPowderData *contsPowData);
-static void grindAndDeliver(uint8_t *dataBytes);
+static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, ContsPowderData *contsPowData, const OutputRelays outputRelay);
+static void injectPowderPlusWaterExtraContainer(const uint16_t pulses, ContsPowderData *constPowData);
+static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses);
+static void injectOnlyWaterLineManual(uint8_t *dataBytes);
+static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop);
+static void cleanMachine(uint8_t *dataBytes);
 static void calculatePulseTime(uint8_t *dataBytes);
 static void waitMachine2Start(uint8_t *dataBytes);
 static void waitBoiler2Start();
 static void startBoilerTask();
 static void syncronizeAllTasks();
+static bool checkWaterBtnFromUi();
+static bool checkStopBtnFromUi();
 static void checkQueuesFromUi(ControlData *controlData);
 static void initMemData(Recipe *recipeData, SystemData *sysData);
 static void checkMemContent(const Recipe *recipeData, const SystemData *sysData);
+static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData);
 
 void initI2C_MCP23017_Out();
 void initI2C_MCP23017_In();
