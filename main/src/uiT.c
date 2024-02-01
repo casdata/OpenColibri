@@ -486,11 +486,9 @@ static void checkQueue4Ui(UiData *myUiData, UiUpdate *myUiUpdate){
 
     if(xQueueReceive(xQueueUI, &tempUiData, pdMS_TO_TICKS(10)) == pdPASS){
 
-        if(myUiData->page != tempUiData.page){
+        if(myUiData->page != tempUiData.page)
             myUiData->page = tempUiData.page;
-            myUiUpdate->updatePage = true;
-        }
-
+        
 
         if(strcmp(myUiData->strData, tempUiData.strData) != 0){
             strcpy(myUiData->strData, tempUiData.strData);
@@ -640,7 +638,7 @@ static void uiTask(void *pvParameters){
     //double refTimeUi, cTimeUi;
 
     initLcd();
-    write2LCD("OpenColibri V003", 16, 0);
+    write2LCD("OpenColibri V005", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
@@ -661,18 +659,10 @@ static void uiTask(void *pvParameters){
                     previousUiState = currentUiState;
 
                     fullClearLcdScreen(); 
-                    write2LCD("?", 1, 8);      
-                }
-
-                if(uiUpdate.updatePage){
-                    uiUpdate.updatePage = false;
-
-                    fullClearLcdScreen();
-
                     if(uiData.page == PAGE_1)
                         write2LCD("1", 1, 8);
                     else
-                        write2LCD("2", 1, 8);
+                        write2LCD("2", 1, 8);   
                 }
 
             break;

@@ -18,7 +18,6 @@ typedef enum{
 } UiState;
 
 typedef struct UiUpdateStruct{
-    bool updatePage;
     bool updateTemp;
     bool updateDataStr;
 } UiUpdate;
