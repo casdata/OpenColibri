@@ -442,7 +442,7 @@ static void boilerTask(void *pvParameters){
                 myPID_Data.pidI = 0;
                 myPID_Data.pidD = 0;
 
-                myPID_Data.offset = 8191.0f;
+                myPID_Data.offset = 8191.0f;        //8191 = 100% | 7372 = 90%
                 boilerState = HOT_MAX_B;
             break;
             case HOT_2_IDLE_B:

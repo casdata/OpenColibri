@@ -9,14 +9,18 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/event_groups.h"          //bt
 #include "freertos/queue.h"
+#include "esp_system.h"                     //bt
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "esp_bt.h"                         //bt
+
+#include "esp_gap_ble_api.h"
+#include "esp_gatts_api.h"
 #include "esp_bt_defs.h"
-#include "esp_bt.h"
 #include "esp_bt_main.h"
-#include "esp_bt_device.h"
-#include "esp_gap_bt_api.h"
+
 #include "esp_spp_api.h"
 #include "esp_timer.h"
 #include "esp_sleep.h"
@@ -28,11 +32,9 @@
 #include "math.h"
 #include "pid_ctrl.h"
 
-#define BT_DEVICE_NAME "OpenColibri_BT"
-#define SPP_SERVER_1 "BT_SPP_SERVER"
-#define CLIENT_NAME_MAX 10
 
-#define CONTROL_TASK_SIZE           4096
+
+#define CONTROL_TASK_SIZE           6144   //6144
 #define CONTROL_TASK_PRIORITY       5
 #define UI_TASK_SIZE                2048
 #define UI_TASK_PRIORITY            4
@@ -40,8 +42,6 @@
 #define INTERRUPTS_TASK_PRIORITY    5
 #define BOILER_TASK_SIZE            2048
 #define BOILER_TASK_PRIORITY        4
-#define BT_TASK_SIZE                2048
-#define BT_TASK_PRIORITY            6
 
 #define STATUS_LED_PIN      GPIO_NUM_2
 #define BOILER_PIN          GPIO_NUM_27
@@ -87,7 +87,22 @@
 #define INTERRUPTS_TASK_TAG     "INTERRUPTS_T"
 #define UI_TASK_TAG             "UI_TASK_T"
 #define BOILER_TASK_TAG         "BOILER_TASK_T"
-#define BT_TASK_TAG             "BT_TASK_T"
+
+#define SPP_PROFILE_NUM             1
+#define SPP_PROFILE_APP_IDX         0
+#define ESP_SPP_APP_ID              0x56
+#define SAMPLE_DEVICE_NAME          "ESP_SPP_SERVER"    //The Device Name Characteristics in GAP
+#define SPP_SVC_INST_ID	            0
+
+/// Characteristic UUID
+#define ESP_GATT_UUID_SPP_DATA_RECEIVE      0xABF1
+#define ESP_GATT_UUID_SPP_DATA_NOTIFY       0xABF2
+
+#define spp_sprintf(s,...)         sprintf((char*)(s), ##__VA_ARGS__)
+#define SPP_DATA_MAX_LEN           (512)
+#define SPP_CMD_MAX_LEN            (20)
+#define SPP_STATUS_MAX_LEN         (20)
+#define SPP_DATA_BUFF_MAX_LEN      (2*1024)
 
 typedef enum {
     SOLENOID_VALVE_2 = 0,   //RELAY 1 / GPB6 / O.5 BOILER 3 WAY-VALVE FAR / WHIPPER PIPE
@@ -123,6 +138,7 @@ typedef enum {
 
 typedef enum {
     COFFEE_M = 0,
+    COFFEE_PRE_M,
     POWDER_A_M,
     POWDER_B_M,
     POWDER_C_M,
@@ -131,7 +147,6 @@ typedef enum {
 
 typedef struct ModuleDataStruct{
     RecipeModuleType    moduleType;
-    bool                preReady;
     uint16_t            pulses;
     uint8_t             gr;                      
 } RecipeModuleStruct;
@@ -211,7 +226,6 @@ extern QueueHandle_t xQueueInputTimePerPulse;
 extern QueueHandle_t xQueueBoilerTemp;
 extern QueueHandle_t xQueueUI;
 extern QueueHandle_t xQueueData2Boiler;
-extern QueueHandle_t xQueueSpp;
 
 
 #endif //OPENCOLIBRI_EXTEND_H

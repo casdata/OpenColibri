@@ -3,6 +3,384 @@
 
 TaskHandle_t controlTaskH = NULL;
 
+static struct gatts_profile_inst spp_profile_tab[SPP_PROFILE_NUM] = {
+    [SPP_PROFILE_APP_IDX] = {
+        .gatts_cb = gatts_profile_event_handler,
+        .gatts_if = ESP_GATT_IF_NONE,       /* Not get the gatt_if, so initial is ESP_GATT_IF_NONE */
+    },
+};
+
+/*
+ *  SPP PROFILE ATTRIBUTES
+ ****************************************************************************************
+ */
+
+#define CHAR_DECLARATION_SIZE   (sizeof(uint8_t))
+static const uint16_t primary_service_uuid = ESP_GATT_UUID_PRI_SERVICE;
+static const uint16_t character_declaration_uuid = ESP_GATT_UUID_CHAR_DECLARE;
+static const uint16_t character_client_config_uuid = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
+
+static const uint8_t char_prop_read_notify = ESP_GATT_CHAR_PROP_BIT_READ|ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static const uint8_t char_prop_read_write = ESP_GATT_CHAR_PROP_BIT_WRITE_NR|ESP_GATT_CHAR_PROP_BIT_READ;
+
+///SPP Service - data receive characteristic, read&write without response
+static const uint16_t spp_data_receive_uuid = ESP_GATT_UUID_SPP_DATA_RECEIVE;
+static const uint8_t  spp_data_receive_val[20] = {0x00};
+
+///SPP Service - data notify characteristic, notify&read
+static const uint16_t spp_data_notify_uuid = ESP_GATT_UUID_SPP_DATA_NOTIFY;
+static const uint8_t  spp_data_notify_val[20] = {0x00};
+static const uint8_t  spp_data_notify_ccc[2] = {0x00, 0x00};
+
+
+char *recvBuff;
+Recipe *recipeList;
+
+///Full HRS Database Description - Used to add attributes into the database
+static const esp_gatts_attr_db_t spp_gatt_db[SPP_IDX_NB] =
+{
+    //SPP -  Service Declaration
+    [SPP_IDX_SVC]                      	=
+    {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&primary_service_uuid, ESP_GATT_PERM_READ,
+    sizeof(spp_service_uuid), sizeof(spp_service_uuid), (uint8_t *)&spp_service_uuid}},
+
+    //SPP -  data receive characteristic Declaration
+    [SPP_IDX_SPP_DATA_RECV_CHAR]            =
+    {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
+    CHAR_DECLARATION_SIZE,CHAR_DECLARATION_SIZE, (uint8_t *)&char_prop_read_write}},
+
+    //SPP -  data receive characteristic Value
+    [SPP_IDX_SPP_DATA_RECV_VAL]             	=
+    {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&spp_data_receive_uuid, ESP_GATT_PERM_READ|ESP_GATT_PERM_WRITE,
+    SPP_DATA_MAX_LEN,sizeof(spp_data_receive_val), (uint8_t *)spp_data_receive_val}},
+
+    //SPP -  data notify characteristic Declaration
+    [SPP_IDX_SPP_DATA_NOTIFY_CHAR]  =
+    {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
+    CHAR_DECLARATION_SIZE,CHAR_DECLARATION_SIZE, (uint8_t *)&char_prop_read_notify}},
+
+    //SPP -  data notify characteristic Value
+    [SPP_IDX_SPP_DATA_NTY_VAL]   =
+    {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&spp_data_notify_uuid, ESP_GATT_PERM_READ,
+    SPP_DATA_MAX_LEN, sizeof(spp_data_notify_val), (uint8_t *)spp_data_notify_val}},
+
+    //SPP -  data notify characteristic - Client Characteristic Configuration Descriptor
+    [SPP_IDX_SPP_DATA_NTF_CFG]         =
+    {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid, ESP_GATT_PERM_READ|ESP_GATT_PERM_WRITE,
+    sizeof(uint16_t),sizeof(spp_data_notify_ccc), (uint8_t *)spp_data_notify_ccc}},
+
+};
+
+static void processBlueData(uint8_t hIndex, uint8_t tIndex){
+
+    uint8_t tempU8 = 0;
+
+    char *tempStr = malloc(17);
+    memset(tempStr, 0, 17);
+
+    hIndex += 2;
+
+    tempStr[0] = recvBuff[hIndex++];
+    tempStr[1] = recvBuff[hIndex++];
+    tempStr[2] = '\0';
+
+    uint8_t rSlot = atoi(tempStr);
+
+    memset(tempStr, 0, 17);
+
+    for(size_t i = hIndex; i < tIndex; i++){
+
+        if(recvBuff[i] == '|'){
+            tempStr[i - hIndex] = '\0';
+            hIndex = (i + 1);
+            break;
+        }
+        else{
+            tempStr[i - hIndex] = recvBuff[i];
+        }
+
+    }
+
+    strcpy(recipeList[rSlot].recipeName, tempStr);
+  
+    memset(tempStr, 0, 17);
+
+
+    for(size_t i = hIndex; i < tIndex; i++){
+        if(recvBuff[i] == '|')
+            tempU8++;
+    }
+
+    if(recipeList[rSlot].moduleSize != 0)
+        free(recipeList[rSlot].modulesArray);
+
+
+    recipeList[rSlot].moduleSize = tempU8;
+
+    recipeList[rSlot].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * tempU8);
+
+
+    size_t j = hIndex;
+
+    do{
+
+        switch(recvBuff[j++]){
+            case 'C':                       //coffee
+                
+            break;
+            case 'r':                       //pre coffee
+
+            break;
+            case 'a':                       //powder a
+
+            break;
+            case 'b':                       //powder b
+
+            break;
+            case 'c':                       //powder c
+
+            break;
+            case 'w':                       //water
+
+            break;
+        }
+
+    }while(j < tIndex);
+
+
+
+
+    
+    free(tempStr);
+}
+
+
+static bool append2Command(uint8_t *dataFromBlue, uint16_t dataSize){
+    bool commandFound = false;
+    static int appendPC = 0;
+
+
+    for(size_t i = 0; i < dataSize; i++)
+        *(recvBuff + (appendPC++)) = *(dataFromBlue + i);
+        
+
+    uint8_t headIndex = -1;
+    uint8_t tailIndex = -1;
+
+    for(size_t i = 0; i < 64; i++){
+        if((headIndex == -1) && (*(recvBuff + i) == '#'))     
+            headIndex = i;
+        else if(headIndex != -1 && (*(recvBuff + i) == '~')){
+            tailIndex = i;
+            commandFound = true;
+            break;
+        }
+
+    }
+
+
+    if(commandFound){
+
+        switch(recvBuff[headIndex + 1]){
+            case 'z':                                               //get all data
+
+            break;
+            case 'd':                                               //data recipe
+                processBlueData(headIndex, tailIndex);
+            break;
+        }
+
+        appendPC = 0;
+
+        memset(recvBuff, 0, 64);
+        //*(recvBuff + (tailIndex + 1)) = '\0';
+    }
+    
+
+
+    return commandFound;
+}
+
+
+static uint8_t find_char_and_desr_index(uint16_t handle)
+{
+    uint8_t error = 0xff;
+
+    for(int i = 0; i < SPP_IDX_NB ; i++){
+        if(handle == spp_handle_table[i]){
+            return i;
+        }
+    }
+
+    return error;
+}
+
+
+static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
+{
+    esp_err_t err;
+
+    switch (event) {
+    case ESP_GAP_BLE_ADV_DATA_RAW_SET_COMPLETE_EVT:
+        esp_ble_gap_start_advertising(&spp_adv_params);
+        break;
+    case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
+        //advertising start complete event to indicate advertising start successfully or failed
+        if((err = param->adv_start_cmpl.status) != ESP_BT_STATUS_SUCCESS) {
+            ESP_LOGE(CONTROL_TASK_TAG, "Advertising start failed: %s\n", esp_err_to_name(err));
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
+{
+    esp_ble_gatts_cb_param_t *p_data = (esp_ble_gatts_cb_param_t *) param;
+    uint8_t res = 0xff;
+
+
+    switch (event) {
+    	case ESP_GATTS_REG_EVT:
+        	esp_ble_gap_set_device_name(SAMPLE_DEVICE_NAME);
+        	esp_ble_gap_config_adv_data_raw((uint8_t *)spp_adv_data, sizeof(spp_adv_data));
+        	esp_ble_gatts_create_attr_tab(spp_gatt_db, gatts_if, SPP_IDX_NB, SPP_SVC_INST_ID);
+       	break;
+    	case ESP_GATTS_WRITE_EVT: {
+    	    res = find_char_and_desr_index(p_data->write.handle);
+            if(p_data->write.is_prep == false){
+                
+                if(res == SPP_IDX_SPP_DATA_NTF_CFG){
+                    if((p_data->write.len == 2)&&(p_data->write.value[0] == 0x01)&&(p_data->write.value[1] == 0x00)){
+                        enable_data_ntf = true;
+                    }else if((p_data->write.len == 2)&&(p_data->write.value[0] == 0x00)&&(p_data->write.value[1] == 0x00)){
+                        enable_data_ntf = false;
+                    }
+
+                    ESP_LOGW("ME", "Ntf: %d", enable_data_ntf);
+                }
+                else if(res == SPP_IDX_SPP_DATA_RECV_VAL){
+
+                    
+
+                    ESP_LOGW("ME", "%s --- %i", p_data->write.value, p_data->write.len);
+
+                    char *sendBuffer = malloc(18);
+
+                    memset(sendBuffer, 0, 18);
+                    
+                    if(append2Command(p_data->write.value, p_data->write.len)){
+                        ESP_LOGI("BLUE", "%s", recvBuff);
+                        strcpy(sendBuffer, "#f~");
+                    }
+                    else{
+                        strcpy(sendBuffer, "#n~");
+                    }
+                    
+
+                    esp_ble_gatts_set_attr_value(spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL], strlen(sendBuffer), (uint8_t *)sendBuffer);
+    
+
+                    free(sendBuffer);
+                    
+
+                }else{
+                    //TODO:
+                }
+            }else if((p_data->write.is_prep == true)&&(res == SPP_IDX_SPP_DATA_RECV_VAL)){
+
+                
+            }
+      	 	break;
+    	}
+    	case ESP_GATTS_EXEC_WRITE_EVT:{
+    	    if(p_data->exec_write.exec_write_flag){
+                
+                ESP_LOGE("NANI", "What!!!!");
+            
+    	    }
+    	    break;
+    	}
+    	case ESP_GATTS_MTU_EVT:
+    	    spp_mtu_size = p_data->mtu.mtu;
+    	    break;
+    	case ESP_GATTS_CONF_EVT:
+    	    break;
+    	case ESP_GATTS_UNREG_EVT:
+        	break;
+    	case ESP_GATTS_DELETE_EVT:
+        	break;
+    	case ESP_GATTS_START_EVT:
+        	break;
+    	case ESP_GATTS_STOP_EVT:
+        	break;
+    	case ESP_GATTS_CONNECT_EVT:
+    	    spp_conn_id = p_data->connect.conn_id;
+    	    spp_gatts_if = gatts_if;
+    	    is_connected = true;
+    	    memcpy(&spp_remote_bda,&p_data->connect.remote_bda,sizeof(esp_bd_addr_t));
+        	break;
+    	case ESP_GATTS_DISCONNECT_EVT:
+    	    is_connected = false;
+    	    enable_data_ntf = false;
+    	    esp_ble_gap_start_advertising(&spp_adv_params);
+    	    break;
+    	case ESP_GATTS_OPEN_EVT:
+    	    break;
+    	case ESP_GATTS_CANCEL_OPEN_EVT:
+    	    break;
+    	case ESP_GATTS_CLOSE_EVT:
+    	    break;
+    	case ESP_GATTS_LISTEN_EVT:
+    	    break;
+    	case ESP_GATTS_CONGEST_EVT:
+    	    break;
+    	case ESP_GATTS_CREAT_ATTR_TAB_EVT:{
+
+    	    if (param->add_attr_tab.status != ESP_GATT_OK){
+
+    	    }
+    	    else if (param->add_attr_tab.num_handle != SPP_IDX_NB){
+
+    	    }
+    	    else {
+    	        memcpy(spp_handle_table, param->add_attr_tab.handles, sizeof(spp_handle_table));
+    	        esp_ble_gatts_start_service(spp_handle_table[SPP_IDX_SVC]);
+    	    }
+    	    break;
+    	}
+    	default:
+    	    break;
+    }
+}
+
+
+static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param){
+
+    /* If event is register event, store the gatts_if for each profile */
+    if (event == ESP_GATTS_REG_EVT) {
+        if (param->reg.status == ESP_GATT_OK) {
+            spp_profile_tab[SPP_PROFILE_APP_IDX].gatts_if = gatts_if;
+        } else {
+            return;
+        }
+    }
+
+    do {
+        int idx;
+        for (idx = 0; idx < SPP_PROFILE_NUM; idx++) {
+            if (gatts_if == ESP_GATT_IF_NONE || /* ESP_GATT_IF_NONE, not specify a certain gatt_if, need to call every profile cb function */
+                    gatts_if == spp_profile_tab[idx].gatts_if) {
+                if (spp_profile_tab[idx].gatts_cb) {
+                    spp_profile_tab[idx].gatts_cb(event, gatts_if, param);
+                }
+            }
+        }
+    } while (0);
+}
+
+
 void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *powderData){
     
     bool runIt = true;
@@ -11,10 +389,8 @@ void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
 
     if(myRecipe->moduleSize > 1){
         for(size_t i = 1; i < myRecipe->moduleSize; i++){
-            if(myRecipe->modulesArray[i].moduleType == COFFEE_M){
-                if(myRecipe->modulesArray[i].preReady)
-                    preCoffee = true;
-                
+            if(myRecipe->modulesArray[i].moduleType == COFFEE_PRE_M){
+                preCoffee = true;
                 break;
             }
         }
@@ -50,10 +426,9 @@ void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
 
                         setBrewer2InjectPosition(dataBytes);
 
-                        vTaskDelay(pdMS_TO_TICKS(1000));    
+                        vTaskDelay(pdMS_TO_TICKS(1000));     
                     }
-                    else if(i != 0 && !preCoffee){
-
+                    else{
                         grindAndDeliver(dataBytes, false);
 
                         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -68,7 +443,13 @@ void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
                     vTaskDelay(pdMS_TO_TICKS(2500));
 
                     setBrewer2StartPosition(dataBytes);
+                break;
+                case COFFEE_PRE_M:
+                    injecBrewerWater(dataBytes, myRecipe->modulesArray[i].pulses);
 
+                    vTaskDelay(pdMS_TO_TICKS(2500));
+
+                    setBrewer2StartPosition(dataBytes);
                 break;
                 case POWDER_A_M:
                     injectPowderPlusWater(dataBytes, myRecipe->modulesArray[i].pulses, myRecipe->modulesArray[i].gr, powderData->refGrPowA, DOSER_DEVICE_1);
@@ -535,6 +916,9 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
     uint32_t ulNotifiedValue = 0;
     bool onWait = true;
 
+    double startTime = 0;
+    double endTime = 0;
+
     ESP_LOGI(CONTROL_TASK_TAG, "Inject brewer water: ON");
 
     xTaskNotify(boilerTaskH, 0x10, eSetBits);
@@ -547,8 +931,8 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
     setRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
+    startTime = esp_timer_get_time();
 
-    //vTaskDelay(pdMS_TO_TICKS(22000));
     xQueueSend(xQueueInputPulse, (void *) &pulses, portMAX_DELAY);
 
     do{
@@ -556,7 +940,8 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
 
         if((ulNotifiedValue & 0x08) >> 3){
             onWait = false;
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
+            endTime = esp_timer_get_time() - startTime;
+            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP %lf", endTime);
         }
 
     }while(onWait);
@@ -1291,9 +1676,6 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
     char *moduleTypeKey = (char *)malloc(13);
     strcpy(moduleTypeKey, "moduleType0");
 
-    char *preReadyKey = (char *)malloc(11);
-    strcpy(preReadyKey, "preReady0");
-
     char *pulsesKey = (char *)malloc(10);
     strcpy(pulsesKey, "pulses0");
 
@@ -1332,13 +1714,11 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
 
                     enableKey[6] = charNum;
                     moduleTypeKey[10] = charNum;
-                    preReadyKey[8] = charNum;
                     pulsesKey[6] = charNum;
                     grKey[2] = charNum;
 
                     nvs_set_u8(nvsHandle, enableKey, 0);
                     nvs_set_u8(nvsHandle, moduleTypeKey, 0);
-                    nvs_set_u8(nvsHandle, preReadyKey, 0);
                     nvs_set_u16(nvsHandle, pulsesKey, 0);
                     nvs_set_u8(nvsHandle, grKey, 0);
 
@@ -1525,7 +1905,6 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
     free(namespaceName);
     free(enableKey);
     free(moduleTypeKey);
-    free(preReadyKey);
     free(pulsesKey);
     free(grKey);
     free(nameStr);
@@ -1542,6 +1921,25 @@ static void checkMemContent(const Recipe *recipeData, const SystemData *sysData,
     ESP_LOGI(CONTROL_TASK_TAG, "--> %d - %d - %lu", sysData->boilerTemperature, sysData->password, sysData->mainCounter);
     */
 
+   for(size_t i = 0; i < 13; i++){
+
+
+        ESP_LOGI(CONTROL_TASK_TAG, "%s (%d):", recipeData[i].recipeName, recipeData[i].moduleSize);
+
+        if(recipeData[i].moduleSize > 0){
+
+            for(size_t j = 0; j < recipeData[i].moduleSize; j++){
+                ESP_LOGW(CONTROL_TASK_TAG, "%d: %d - %d - %d", j, recipeData[i].modulesArray[j].moduleType, 
+                                                        recipeData[i].modulesArray[j].pulses, recipeData[i].modulesArray[j].gr);
+            }
+        }
+
+        ESP_LOGI(CONTROL_TASK_TAG, "------------------" );
+        
+   }
+
+
+    /*
     ESP_LOGI(CONTROL_TASK_TAG, "0 = %s - %d - %d + %d", 
         recipeData[0].recipeName, recipeData[0].modulesArray[0].moduleType, recipeData[0].modulesArray[0].pulses,
         recipeData[0].moduleSize);
@@ -1554,6 +1952,8 @@ static void checkMemContent(const Recipe *recipeData, const SystemData *sysData,
     ESP_LOGI(CONTROL_TASK_TAG, "2 = %s - %d - %d - %d + %d", 
         recipeData[2].recipeName, recipeData[2].modulesArray[0].moduleType, recipeData[2].modulesArray[0].pulses,
         recipeData[2].modulesArray[0].gr, recipeData[2].moduleSize);
+
+        */
 
     ESP_LOGI(CONTROL_TASK_TAG, "pow = %d - %d - %d", powderData->refGrPowA, powderData->refGrPowB, powderData->refGrPowC);
 }
@@ -1570,7 +1970,7 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
 
     recipeData[0].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * 1);
     recipeData[0].modulesArray[0].moduleType = COFFEE_M;
-    recipeData[0].modulesArray[0].pulses = 142;
+    recipeData[0].modulesArray[0].pulses = 154;         //148
 
     recipeData[0].moduleSize = 1;
 
@@ -1581,7 +1981,7 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
 
     recipeData[1].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * 2);
     recipeData[1].modulesArray[0].moduleType = COFFEE_M;
-    recipeData[1].modulesArray[0].pulses = 114;
+    recipeData[1].modulesArray[0].pulses = 114;             
     recipeData[1].modulesArray[1].moduleType = WATER_C;
     recipeData[1].modulesArray[1].pulses = 10;
 
@@ -1590,37 +1990,94 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
 
     recipeData[2].recipeName = (char *)malloc(17);
     memset(recipeData[2].recipeName, 0, 17);
-    strcpy(recipeData[2].recipeName, "Dar Milk Coffee");
+    strcpy(recipeData[2].recipeName, "Light Coffee");
 
     recipeData[2].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * 2);
     recipeData[2].modulesArray[0].moduleType = COFFEE_M;
-    recipeData[2].modulesArray[0].pulses = 90;
+    recipeData[2].modulesArray[0].pulses = 78;
 
-    recipeData[2].modulesArray[1].moduleType = POWDER_A_M;
-    recipeData[2].modulesArray[1].pulses = 60;
-    recipeData[2].modulesArray[1].gr = 7;
+    recipeData[2].modulesArray[1].moduleType = WATER_C;
+    recipeData[2].modulesArray[1].pulses = 29;
 
     recipeData[2].moduleSize = 2;
 
 
+    recipeData[3].recipeName = (char *)malloc(17);
+    memset(recipeData[3].recipeName, 0, 17);
+    strcpy(recipeData[3].recipeName, "Americano");
+
+
+    recipeData[3].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * 1);
+    recipeData[3].modulesArray[0].moduleType = COFFEE_M;
+    recipeData[3].modulesArray[0].pulses = 246;         //193
+
+    recipeData[3].moduleSize = 1;
+
+
     recipeData[4].recipeName = (char *)malloc(17);
     memset(recipeData[4].recipeName, 0, 17);
-    strcpy(recipeData[4].recipeName, "Mid Milk Coffee");
+    strcpy(recipeData[4].recipeName, "Cafe con Leche");
 
     recipeData[4].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * 2);
     recipeData[4].modulesArray[0].moduleType = COFFEE_M;
-    recipeData[4].modulesArray[0].pulses = 33;
+    recipeData[4].modulesArray[0].pulses = 122;
 
     recipeData[4].modulesArray[1].moduleType = POWDER_A_M;
-    recipeData[4].modulesArray[1].pulses = 121;
-    recipeData[4].modulesArray[1].gr = 15;
+    recipeData[4].modulesArray[1].pulses = 113;
+    recipeData[4].modulesArray[1].gr = 28;
 
     recipeData[4].moduleSize = 2;
+
+
+    recipeData[5].recipeName = (char *)malloc(17);
+    memset(recipeData[5].recipeName, 0, 17);
+    strcpy(recipeData[5].recipeName, "Pintadito");
+
+    recipeData[5].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * 2);
+    recipeData[5].modulesArray[0].moduleType = COFFEE_M;
+    recipeData[5].modulesArray[0].pulses = 54;
+
+    recipeData[5].modulesArray[1].moduleType = POWDER_A_M;
+    recipeData[5].modulesArray[1].pulses = 182;
+    recipeData[5].modulesArray[1].gr = 22;
+
+    recipeData[5].moduleSize = 2;
+
+
+    for(size_t i = 6; i < 13; i++){
+        recipeData[i].recipeName = (char *)malloc(17);
+        memset(recipeData[i].recipeName, 0, 17);
+
+        recipeData[i].moduleSize = 0;
+    }
 
 
     powderData->refGrPowA = 15;
     powderData->refGrPowB = 15;
     powderData->refGrPowC = 15;
+
+}
+
+
+static void btSubTask(bool *btEnabled){
+  
+    if(!(*btEnabled)){
+        *btEnabled = true;
+
+        initBLUE();
+    }
+
+    if(*btEnabled){
+        bool runIt = true;
+
+        
+
+        while(runIt){
+            checkQueuesFromUi(NULL);
+            
+        }
+
+    }
 
 }
 
@@ -1658,6 +2115,42 @@ void initI2C_MCP23017_In(){
 
 }
 
+void initBLUE(){
+    esp_err_t ret;
+    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+
+    ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
+
+    ret = esp_bt_controller_init(&bt_cfg);
+    if (ret) {
+        ESP_LOGE(CONTROL_TASK_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
+        return;
+    }
+
+    ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+    if (ret) {
+        ESP_LOGE(CONTROL_TASK_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
+        return;
+    }
+
+    ESP_LOGI(CONTROL_TASK_TAG, "%s init bluetooth\n", __func__);
+    ret = esp_bluedroid_init();
+    if (ret) {
+        ESP_LOGE(CONTROL_TASK_TAG, "%s init bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
+        return;
+    }
+    ret = esp_bluedroid_enable();
+    if (ret) {
+        ESP_LOGE(CONTROL_TASK_TAG, "%s enable bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
+        return;
+    }
+
+    esp_ble_gatts_register_callback(gatts_event_handler);
+    esp_ble_gap_register_callback(gap_event_handler);
+    esp_ble_gatts_app_register(ESP_SPP_APP_ID);
+
+}
+
 
 void initControlTask(){
     BaseType_t xReturned = xTaskCreate(controlTask, "control_task", CONTROL_TASK_SIZE, (void *)NULL, CONTROL_TASK_PRIORITY, &controlTaskH);
@@ -1674,11 +2167,12 @@ void initControlTask(){
 
 static void controlTask(void *pvParameters){
 
+    bool btEnabled = false;
     ControlData controlData = {IDLE_C, 0, PAGE_1};
     //ContsPowderData conPowderData = {1.8333f, 1.8333f, 1.8333f, 80737.37};
     PowderGramsRefData powderGramsRefData = {0, 0, 0};
 
-    Recipe *recipeList = (Recipe *)malloc(sizeof(Recipe) * 13);
+    recipeList = (Recipe *)malloc(sizeof(Recipe) * 13);
     SystemData systemData;
     UiData uiDataControl = {PAGE_1, 0};
 
@@ -1689,14 +2183,28 @@ static void controlTask(void *pvParameters){
 
     memset(outputIO_Buff, 0, 2);
 
+    recvBuff = malloc(64);
+    memset(recvBuff, 0, 64);
+
     initMemData(recipeList, &systemData, &powderGramsRefData);
 
-    xQueueSend(xQueueData2Boiler, (void *) &systemData.boilerTemperature, (TickType_t) 10);
+    systemData.boilerTemperature = 89;
 
+    xQueueSend(xQueueData2Boiler, (void *) &systemData.boilerTemperature, (TickType_t) 10);
 
     loadFakeMemContent(recipeList, &systemData, &powderGramsRefData);
 
     checkMemContent(recipeList, &systemData, &powderGramsRefData);
+
+    initBLUE();
+
+    while(true){
+
+       
+       vTaskDelay(pdMS_TO_TICKS(500)); //100
+    }
+
+
 
     checkAirBreak(outputIO_Buff);
 
@@ -1726,7 +2234,7 @@ static void controlTask(void *pvParameters){
 
             break;
             case MAINTENANCE_C:
-
+                btSubTask(&btEnabled);
 
                 controlData.controlState = IDLE_C;
             break;

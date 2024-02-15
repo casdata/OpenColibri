@@ -7,6 +7,7 @@
 #include "uiT.h"
 
 
+
 typedef enum{
     IDLE_C,
     MAINTENANCE_C,
@@ -33,6 +34,71 @@ typedef struct ContainerPowStruct{
 
 
 extern TaskHandle_t controlTaskH;
+
+enum{
+    SPP_IDX_SVC,
+
+    SPP_IDX_SPP_DATA_RECV_CHAR,
+    SPP_IDX_SPP_DATA_RECV_VAL,
+
+    SPP_IDX_SPP_DATA_NOTIFY_CHAR,
+    SPP_IDX_SPP_DATA_NTY_VAL,
+    SPP_IDX_SPP_DATA_NTF_CFG,
+
+    SPP_IDX_NB,
+};
+
+
+
+
+/// SPP Service
+static const uint16_t spp_service_uuid = 0xABF0;
+static const uint8_t spp_adv_data[23] = {
+    /* Flags */
+    0x02,0x01,0x06,
+    /* Complete List of 16-bit Service Class UUIDs */
+    0x03,0x03,0xF0,0xAB,
+    /* Complete Local Name in advertising */
+    0x0F,0x09, 'O', 'p', 'e', 'n', 'C', 'o', 'l', 'i', 'b', 'r', 'i'
+};
+
+static uint16_t spp_mtu_size = 23;
+static uint16_t spp_conn_id = 0xffff;
+static esp_gatt_if_t spp_gatts_if = 0xff;
+
+
+static bool enable_data_ntf = false;
+static bool is_connected = false;
+static esp_bd_addr_t spp_remote_bda = {0x0,};
+
+static uint16_t spp_handle_table[SPP_IDX_NB];
+
+static esp_ble_adv_params_t spp_adv_params = {
+    .adv_int_min        = 0x20,
+    .adv_int_max        = 0x40,
+    .adv_type           = ADV_TYPE_IND,
+    .own_addr_type      = BLE_ADDR_TYPE_PUBLIC,
+    .channel_map        = ADV_CHNL_ALL,
+    .adv_filter_policy  = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
+};
+
+struct gatts_profile_inst {
+    esp_gatts_cb_t gatts_cb;
+    uint16_t gatts_if;
+    uint16_t app_id;
+    uint16_t conn_id;
+    uint16_t service_handle;
+    esp_gatt_srvc_id_t service_id;
+    uint16_t char_handle;
+    esp_bt_uuid_t char_uuid;
+    esp_gatt_perm_t perm;
+    esp_gatt_char_prop_t property;
+    uint16_t descr_handle;
+    esp_bt_uuid_t descr_uuid;
+};
+
+
+
 
 /*
 static void runDrink1(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
@@ -71,10 +137,19 @@ static void startBoilerTask();
 static void syncronizeAllTasks();
 static bool checkWaterBtnFromUi();
 static bool checkStopBtnFromUi();
+
 static void checkQueuesFromUi(ControlData *controlData);
 static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefData *powderData);
 static void checkMemContent(const Recipe *recipeData, const SystemData *sysData, PowderGramsRefData *powderData);
 static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGramsRefData *powderData);
+static void btSubTask(bool *btEnabled);
+
+
+
+static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
+static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+static void initBLUE();
 
 void initI2C_MCP23017_Out();
 void initI2C_MCP23017_In();
