@@ -9,13 +9,22 @@
 
 
 typedef enum{
-    IDLE_C,
+    IDLE_C = 0,
     MAINTENANCE_C,
     CLEAN_C,
     DRINK_C,
     WATER_C,
     SWAP_PAGE_C
 } ControlState;
+
+typedef enum{
+    IDLE_SYNC_C = 0,
+    SEND_RECIPES_C,
+    POST_SEND_RECIPES_C,
+    SEND_TEMPERATURE_C,
+    POST_TEMPERATURE_C,
+    END_SYNC_C
+} SyncroState;
 
 
 typedef struct ControlDataStruct{
@@ -141,6 +150,7 @@ static bool checkStopBtnFromUi();
 static void checkQueuesFromUi(ControlData *controlData);
 static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefData *powderData);
 static void checkMemContent(const Recipe *recipeData, const SystemData *sysData, PowderGramsRefData *powderData);
+static void checkOnlyRecipeMemContent(const Recipe *recipeData);
 static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGramsRefData *powderData);
 static void btSubTask(bool *btEnabled);
 

@@ -142,7 +142,7 @@ typedef enum {
     POWDER_A_M,
     POWDER_B_M,
     POWDER_C_M,
-    WATER
+    WATER_M
 } RecipeModuleType;
 
 typedef struct ModuleDataStruct{

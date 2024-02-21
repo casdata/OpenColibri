@@ -32,8 +32,10 @@ static const uint16_t spp_data_notify_uuid = ESP_GATT_UUID_SPP_DATA_NOTIFY;
 static const uint8_t  spp_data_notify_val[20] = {0x00};
 static const uint8_t  spp_data_notify_ccc[2] = {0x00, 0x00};
 
-
+bool sendNextData;
+SyncroState syncroState;
 char *recvBuff;
+char *commandBuff;
 Recipe *recipeList;
 
 ///Full HRS Database Description - Used to add attributes into the database
@@ -71,11 +73,196 @@ static const esp_gatts_attr_db_t spp_gatt_db[SPP_IDX_NB] =
 
 };
 
+static void addRecipeIndex2CommandBuff(uint8_t recipeIndex){
+
+    char *tempData = (char *)malloc(8);
+
+    sprintf(tempData, "%d", recipeIndex);
+
+    if(recipeIndex < 10)
+        strcat(commandBuff,"0");
+
+    strcat(commandBuff, tempData);
+
+
+    free(tempData);
+
+}
+
+static void addU8Value2CommandBuff(uint8_t u8Value){
+
+    char *tempData = (char *)malloc(6);
+
+    memset(tempData, 0, 6);
+
+    sprintf(tempData, "%d", u8Value);
+
+    strcat(commandBuff, tempData);
+
+    free(tempData);
+
+}
+
+static void addU16Value2CommandBuff(uint16_t u16Value){
+
+    char *tempData = (char *)malloc(16);
+
+    memset(tempData, 0, 16);
+
+    sprintf(tempData, "%d", u16Value);
+
+    strcat(commandBuff, tempData);
+
+    free(tempData);
+
+}
+
+static void sendAllRecipes(Recipe *recipe){
+    static uint8_t tempPC = 0;
+    static uint8_t recipeIndex = 0;
+    static bool createCommand = true;
+
+
+    if(sendNextData){
+        sendNextData = false;
+    
+        if(createCommand){
+            createCommand = false;
+
+            memset(commandBuff, 0, 64);
+
+            strcat(commandBuff, "#");
+
+            size_t modSize = recipe[recipeIndex].moduleSize;
+
+            if(modSize > 0){
+                strcat(commandBuff, "d");
+                addRecipeIndex2CommandBuff(recipeIndex);
+
+                strcat(commandBuff, recipe[recipeIndex].recipeName);
+
+                strcat(commandBuff, "|o");
+
+                addU16Value2CommandBuff(recipe[recipeIndex].recipeCounter);
+
+                strcat(commandBuff, "|");
+
+                for(size_t i = 0; i < modSize; i++){
+                    switch(recipe[recipeIndex].modulesArray[i].moduleType){
+                        case COFFEE_M:
+                            strcat(commandBuff, "C");
+                            addU16Value2CommandBuff(recipe[recipeIndex].modulesArray[i].pulses);
+                        break;
+                        case COFFEE_PRE_M:
+                            strcat(commandBuff, "r");
+                            addU16Value2CommandBuff(recipe[recipeIndex].modulesArray[i].pulses);
+                        break;
+                        case POWDER_A_M:
+                            strcat(commandBuff, "a");
+                            addU16Value2CommandBuff(recipe[recipeIndex].modulesArray[i].pulses);
+                            strcat(commandBuff, ",");
+                            addU8Value2CommandBuff(recipe[recipeIndex].modulesArray[i].gr);
+                        break;
+                        case POWDER_B_M:
+                            strcat(commandBuff, "b");
+                            addU16Value2CommandBuff(recipe[recipeIndex].modulesArray[i].pulses);
+                            strcat(commandBuff, ",");
+                            addU8Value2CommandBuff(recipe[recipeIndex].modulesArray[i].gr);
+                        break;
+                        case POWDER_C_M:
+                            strcat(commandBuff, "c");
+                            addU16Value2CommandBuff(recipe[recipeIndex].modulesArray[i].pulses);
+                            strcat(commandBuff, ",");
+                            addU8Value2CommandBuff(recipe[recipeIndex].modulesArray[i].gr);
+                        break;
+                        case WATER_M:
+                            strcat(commandBuff, "w");
+                            addU16Value2CommandBuff(recipe[recipeIndex].modulesArray[i].pulses);
+                        break;
+                    }
+                    strcat(commandBuff, "|");
+                }
+            }
+            else{
+                strcat(commandBuff, "D");
+                addRecipeIndex2CommandBuff(recipeIndex);
+
+                strcat(commandBuff, "|");
+            }
+
+            strcat(commandBuff, "~");
+
+            ESP_LOGI(CONTROL_TASK_TAG, "command[%d]: %s", recipeIndex, commandBuff);
+
+            recipeIndex++;
+
+            tempPC = 0;
+
+        }
+
+
+        char *innerBuffer = (char *)malloc(24); 
+        memset(innerBuffer, 0, 24);
+
+        size_t countTo20 = 0;
+
+        do{
+            innerBuffer[countTo20++] = commandBuff[tempPC++];
+        } while(countTo20 < 20 && (tempPC < strlen(commandBuff)));
+
+        innerBuffer[countTo20] = '\0';
+
+        esp_ble_gatts_set_attr_value(spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL], strlen(innerBuffer), (uint8_t *)innerBuffer);
+
+        ESP_LOGI(CONTROL_TASK_TAG, "sending recp[%d]: %s", tempPC, innerBuffer);
+
+        if(tempPC >= strlen(commandBuff)){ 
+
+            if(recipeIndex > 12){
+                sendNextData = false;
+                syncroState = POST_SEND_RECIPES_C;
+
+            }
+
+            createCommand = true;
+        }        
+
+        free(innerBuffer);
+    
+
+    }
+
+
+}
+
+
 static void processBlueData(uint8_t hIndex, uint8_t tIndex){
 
-    uint8_t tempU8 = 0;
+    //checkOnlyRecipeMemContent(recipeList);
 
-    char *tempStr = malloc(17);
+    char *namespaceName = (char *)malloc(10);
+    strcpy(namespaceName, "recipe0");
+
+    char *enableKey = (char *)malloc(10);
+    strcpy(enableKey, "enable0");
+
+    char *moduleTypeKey = (char *)malloc(13);
+    strcpy(moduleTypeKey, "moduleType0");
+
+    char *pulsesKey = (char *)malloc(10);
+    strcpy(pulsesKey, "pulses0");
+
+    char *grKey = (char *)malloc(5);
+    strcpy(grKey, "gr0");
+
+    nvs_handle_t nvsHandle;
+    esp_err_t err;
+
+
+    uint8_t tempU8 = 0;
+    uint16_t tempU16 = 0;
+
+    char *tempStr = (char *)malloc(17);
     memset(tempStr, 0, 17);
 
     hIndex += 2;
@@ -87,6 +274,22 @@ static void processBlueData(uint8_t hIndex, uint8_t tIndex){
     uint8_t rSlot = atoi(tempStr);
 
     memset(tempStr, 0, 17);
+
+    if(rSlot < 9)
+        namespaceName[6] = (char)(rSlot + 49);
+    else{
+        namespaceName[6] = '1';
+        namespaceName[7] = (char)(rSlot + 39);
+        namespaceName[8] = '\0';
+    }
+
+
+    err = nvs_open(namespaceName, NVS_READWRITE, &nvsHandle);
+    bool nvsOk = false;
+
+    if(err == ESP_OK)
+        nvsOk = true;
+    
 
     for(size_t i = hIndex; i < tIndex; i++){
 
@@ -102,6 +305,12 @@ static void processBlueData(uint8_t hIndex, uint8_t tIndex){
     }
 
     strcpy(recipeList[rSlot].recipeName, tempStr);
+
+    if(nvsOk){
+        err = nvs_set_str(nvsHandle, "recipeName", tempStr);
+        if(err == ESP_OK)
+            nvs_commit(nvsHandle);
+    }
   
     memset(tempStr, 0, 17);
 
@@ -117,41 +326,443 @@ static void processBlueData(uint8_t hIndex, uint8_t tIndex){
 
     recipeList[rSlot].moduleSize = tempU8;
 
+    //if(recipeList[rSlot].modulesArray != NULL)    
+        //free(recipeList[rSlot].modulesArray);
+
     recipeList[rSlot].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * tempU8);
+    recipeList[rSlot].recipeCounter = 0;
 
 
     size_t j = hIndex;
+
+    size_t tempModuleNum = 0;
+    size_t strPC = 0;
+
+    size_t subModulePC = 0;
+    char charNum;
+
+    if(nvsOk){
+        for(size_t k = 0; k < 5; k++){
+            charNum = (char)(k + 48);
+
+            enableKey[6] = charNum;
+            moduleTypeKey[10] = charNum;
+            pulsesKey[6] = charNum;
+            grKey[2] = charNum;
+
+            nvs_set_u8(nvsHandle, enableKey, 0);
+            nvs_set_u8(nvsHandle, moduleTypeKey, 0);
+            nvs_set_u16(nvsHandle, pulsesKey, 0);
+            nvs_set_u8(nvsHandle, grKey, 0);
+        }
+
+        nvs_commit(nvsHandle);
+    }
 
     do{
 
         switch(recvBuff[j++]){
             case 'C':                       //coffee
-                
+                charNum = (char)((subModulePC++) + 48);
+
+                enableKey[6]= charNum;
+                moduleTypeKey[10] = charNum;
+                pulsesKey[6] = charNum;
+                grKey[2] = charNum;
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != '|')
+                    tempStr[strPC++] = recvBuff[j++];
+
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU16 = atoi(tempStr);
+            
+                recipeList[rSlot].modulesArray[tempModuleNum].moduleType = COFFEE_M;
+                recipeList[rSlot].modulesArray[tempModuleNum].pulses = tempU16;
+
+                if(nvsOk){
+                    nvs_set_u8(nvsHandle, enableKey, 1);
+                    nvs_set_u8(nvsHandle, moduleTypeKey, 0);
+                    nvs_set_u16(nvsHandle, pulsesKey, tempU16);
+                }
+
+                tempModuleNum++;
             break;
             case 'r':                       //pre coffee
 
+                charNum = (char)((subModulePC++) + 48);
+
+                enableKey[6]= charNum;
+                moduleTypeKey[10] = charNum;
+                pulsesKey[6] = charNum;
+                grKey[2] = charNum;
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != '|')
+                    tempStr[strPC++] = recvBuff[j++];
+
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU16 = atoi(tempStr);
+            
+                recipeList[rSlot].modulesArray[tempModuleNum].moduleType = COFFEE_PRE_M;
+                recipeList[rSlot].modulesArray[tempModuleNum].pulses = tempU16;
+
+                if(nvsOk){
+                    nvs_set_u8(nvsHandle, enableKey, 1);
+                    nvs_set_u8(nvsHandle, moduleTypeKey, 1);
+                    nvs_set_u16(nvsHandle, pulsesKey, tempU16);
+                }
+
+                tempModuleNum++;
             break;
             case 'a':                       //powder a
+                charNum = (char)((subModulePC++) + 48);
 
+                enableKey[6]= charNum;
+                moduleTypeKey[10] = charNum;
+                pulsesKey[6] = charNum;
+                grKey[2] = charNum;
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != ',')
+                    tempStr[strPC++] = recvBuff[j++];
+
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU16 = atoi(tempStr);
+        
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != '|')
+                    tempStr[strPC++] = recvBuff[j++];
+                
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU8 = atoi(tempStr);
+
+                recipeList[rSlot].modulesArray[tempModuleNum].moduleType = POWDER_A_M;
+                recipeList[rSlot].modulesArray[tempModuleNum].pulses = tempU16;
+                recipeList[rSlot].modulesArray[tempModuleNum].gr = tempU8;
+
+                if(nvsOk){
+                    nvs_set_u8(nvsHandle, enableKey, 1);
+                    nvs_set_u8(nvsHandle, moduleTypeKey, 2);
+                    nvs_set_u16(nvsHandle, pulsesKey, tempU16);
+                    nvs_set_u8(nvsHandle, grKey, tempU8);
+                }
+
+
+                tempModuleNum++;
             break;
             case 'b':                       //powder b
+                charNum = (char)((subModulePC++) + 48);
 
+                enableKey[6]= charNum;
+                moduleTypeKey[10] = charNum;
+                pulsesKey[6] = charNum;
+                grKey[2] = charNum;
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != ',')
+                    tempStr[strPC++] = recvBuff[j++];
+
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU16 = atoi(tempStr);
+        
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != '|')
+                    tempStr[strPC++] = recvBuff[j++];
+                
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU8 = atoi(tempStr);
+
+                recipeList[rSlot].modulesArray[tempModuleNum].moduleType = POWDER_B_M;
+                recipeList[rSlot].modulesArray[tempModuleNum].pulses = tempU16;
+                recipeList[rSlot].modulesArray[tempModuleNum].gr = tempU8;
+
+                if(nvsOk){
+                    nvs_set_u8(nvsHandle, enableKey, 1);
+                    nvs_set_u8(nvsHandle, moduleTypeKey, 3);
+                    nvs_set_u16(nvsHandle, pulsesKey, tempU16);
+                    nvs_set_u8(nvsHandle, grKey, tempU8);
+                }
+
+                tempModuleNum++;
             break;
             case 'c':                       //powder c
+                charNum = (char)((subModulePC++) + 48);
 
+                enableKey[6]= charNum;
+                moduleTypeKey[10] = charNum;
+                pulsesKey[6] = charNum;
+                grKey[2] = charNum;
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != ',')
+                    tempStr[strPC++] = recvBuff[j++];
+
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU16 = atoi(tempStr);
+        
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != '|')
+                    tempStr[strPC++] = recvBuff[j++];
+                
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU8 = atoi(tempStr);
+
+                recipeList[rSlot].modulesArray[tempModuleNum].moduleType = POWDER_C_M;
+                recipeList[rSlot].modulesArray[tempModuleNum].pulses = tempU16;
+                recipeList[rSlot].modulesArray[tempModuleNum].gr = tempU8;
+
+                if(nvsOk){
+                    nvs_set_u8(nvsHandle, enableKey, 1);
+                    nvs_set_u8(nvsHandle, moduleTypeKey, 4);
+                    nvs_set_u16(nvsHandle, pulsesKey, tempU16);
+                    nvs_set_u8(nvsHandle, grKey, tempU8);
+                }
+
+
+                tempModuleNum++;
             break;
             case 'w':                       //water
+                charNum = (char)((subModulePC++) + 48);
 
+                enableKey[6]= charNum;
+                moduleTypeKey[10] = charNum;
+                pulsesKey[6] = charNum;
+                grKey[2] = charNum;
+
+                strPC = 0;
+                memset(tempStr, 0, 17);
+
+                while(recvBuff[j] != '|')
+                    tempStr[strPC++] = recvBuff[j++];
+
+                j++;
+
+                tempStr[strPC++] = '\0';
+
+                tempU16 = atoi(tempStr);
+            
+                recipeList[rSlot].modulesArray[tempModuleNum].moduleType = WATER_M;
+                recipeList[rSlot].modulesArray[tempModuleNum].pulses = tempU16;
+
+                if(nvsOk){
+                    nvs_set_u8(nvsHandle, enableKey, 1);
+                    nvs_set_u8(nvsHandle, moduleTypeKey, 5);
+                    nvs_set_u16(nvsHandle, pulsesKey, tempU16);
+                }
+
+                tempModuleNum++;
             break;
         }
 
     }while(j < tIndex);
 
+    if(nvsOk){
+        nvs_commit(nvsHandle);
 
+        nvs_close(nvsHandle);
+    }
 
+    //checkOnlyRecipeMemContent(recipeList);
 
     
     free(tempStr);
+    free(namespaceName);
+    free(enableKey);
+    free(moduleTypeKey);
+    free(pulsesKey);
+    free(grKey);
+}
+
+static void processNullData(uint8_t hIndex, uint8_t tIndex){
+
+    checkOnlyRecipeMemContent(recipeList);
+
+    char *namespaceName = (char *)malloc(10);
+    strcpy(namespaceName, "recipe0");
+
+    char *enableKey = (char *)malloc(10);
+    strcpy(enableKey, "enable0");
+
+    char *moduleTypeKey = (char *)malloc(13);
+    strcpy(moduleTypeKey, "moduleType0");
+
+    char *pulsesKey = (char *)malloc(10);
+    strcpy(pulsesKey, "pulses0");
+
+    char *grKey = (char *)malloc(5);
+    strcpy(grKey, "gr0");
+
+    nvs_handle_t nvsHandle;
+    esp_err_t err;
+
+
+    uint8_t tempU8 = 0;
+    uint16_t tempU16 = 0;
+
+    char *tempStr = (char *)malloc(17);
+    memset(tempStr, 0, 17);
+
+    hIndex += 2;
+
+    tempStr[0] = recvBuff[hIndex++];
+    tempStr[1] = recvBuff[hIndex++];
+    tempStr[2] = '\0';
+
+    uint8_t rSlot = atoi(tempStr);
+
+    memset(tempStr, 0, 17);
+
+    if(rSlot < 9)
+        namespaceName[6] = (char)(rSlot + 49);
+    else{
+        namespaceName[6] = '1';
+        namespaceName[7] = (char)(rSlot + 39);
+        namespaceName[8] = '\0';
+    }
+
+
+    err = nvs_open(namespaceName, NVS_READWRITE, &nvsHandle);
+    bool nvsOk = false;
+
+    if(err == ESP_OK)
+        nvsOk = true;
+
+
+    strcpy(recipeList[rSlot].recipeName, "none");
+    recipeList[rSlot].moduleSize = 0;
+    recipeList[rSlot].recipeCounter = 0;
+
+    //if(recipeList[rSlot].modulesArray != NULL)    
+        //free(recipeList[rSlot].modulesArray);
+
+
+    if(nvsOk){
+        char charNum;
+
+        for(size_t k = 0; k < 5; k++){
+            charNum = (char)(k + 48);
+
+            enableKey[6] = charNum;
+            moduleTypeKey[10] = charNum;
+            pulsesKey[6] = charNum;
+            grKey[2] = charNum;
+
+            nvs_set_u8(nvsHandle, enableKey, 0);
+            nvs_set_u8(nvsHandle, moduleTypeKey, 0);
+            nvs_set_u16(nvsHandle, pulsesKey, 0);
+            nvs_set_u8(nvsHandle, grKey, 0);
+        }
+
+        nvs_commit(nvsHandle);
+
+        err = nvs_set_str(nvsHandle, "recipeName", "none");
+        if(err == ESP_OK)
+            nvs_commit(nvsHandle);
+    }
+
+    
+    free(tempStr);
+    free(namespaceName);
+    free(enableKey);
+    free(moduleTypeKey);
+    free(pulsesKey);
+    free(grKey);
+
+    checkOnlyRecipeMemContent(recipeList);
+
+}
+
+static void processTempData(uint8_t hIndex, uint8_t tIndex){
+
+    //sysData
+    //nvs_set_u8(nvsHandle, "boilerTemp", 89);
+    //xQueueSend(xQueueData2Boiler, (void *) &systemData.boilerTemperature, (TickType_t) 10);
+
+    char *namespaceName = (char *)malloc(10);
+    strcpy(namespaceName, "sysData");
+
+    nvs_handle_t nvsHandle;
+    esp_err_t err;
+    bool nvsOk = false;
+
+    err = nvs_open(namespaceName, NVS_READWRITE, &nvsHandle);
+    if(err == ESP_OK)
+        nvsOk = true;
+
+
+    char *tempStr = (char *)malloc(10);
+
+    memset(tempStr, 0, 10);
+
+    size_t strPC = 0;
+    hIndex += 2;
+
+    while(recvBuff[hIndex] != '|')
+        tempStr[strPC++] = recvBuff[hIndex++];
+
+
+    tempStr[strPC++] = '\0';
+
+    uint8_t tempU8 = atoi(tempStr);
+
+    //ESP_LOGW(CONTROL_TASK_TAG, "NEW temp: %d", tempU8);
+
+    xQueueSend(xQueueData2Boiler, (void *) &tempU8, (TickType_t) 10);
+
+    if(nvsOk){
+        nvs_set_u8(nvsHandle, "boilerTemp", tempU8);
+        nvs_commit(nvsHandle);
+        nvs_close(nvsHandle);
+    }
+
+
+    free(tempStr);
+    free(namespaceName);
+
 }
 
 
@@ -164,8 +775,8 @@ static bool append2Command(uint8_t *dataFromBlue, uint16_t dataSize){
         *(recvBuff + (appendPC++)) = *(dataFromBlue + i);
         
 
-    uint8_t headIndex = -1;
-    uint8_t tailIndex = -1;
+    int8_t headIndex = -1;
+    int8_t tailIndex = -1;
 
     for(size_t i = 0; i < 64; i++){
         if((headIndex == -1) && (*(recvBuff + i) == '#'))     
@@ -181,12 +792,41 @@ static bool append2Command(uint8_t *dataFromBlue, uint16_t dataSize){
 
     if(commandFound){
 
+        ESP_LOGW(CONTROL_TASK_TAG, "commandFound %s", recvBuff);
+
         switch(recvBuff[headIndex + 1]){
-            case 'z':                                               //get all data
+            case 'n':                                               //get next data
+                ESP_LOGW(CONTROL_TASK_TAG, "n command");
+                switch(syncroState){
+                    case SEND_RECIPES_C:
+                        sendNextData = true;
+                    break;
+                    case POST_SEND_RECIPES_C:
+                        syncroState = SEND_TEMPERATURE_C;
+                    break;
+                    case POST_TEMPERATURE_C:
+                        syncroState = END_SYNC_C;
+                    break;
+                    default:
+                }
 
             break;
+            case 'z':                                               //get all data
+                ESP_LOGW(CONTROL_TASK_TAG, "z command");
+                syncroState = SEND_RECIPES_C;
+                sendNextData = true;
+            break;
             case 'd':                                               //data recipe
+                ESP_LOGW(CONTROL_TASK_TAG, "d command");
                 processBlueData(headIndex, tailIndex);
+            break;
+            case 'D':                                               //data null recipe
+                ESP_LOGW(CONTROL_TASK_TAG, "D command");
+                processNullData(headIndex, tailIndex);
+            break;
+            case 't':
+                ESP_LOGW(CONTROL_TASK_TAG, "t command");
+                processTempData(headIndex, tailIndex);
             break;
         }
 
@@ -199,6 +839,31 @@ static bool append2Command(uint8_t *dataFromBlue, uint16_t dataSize){
 
 
     return commandFound;
+}
+
+static void sendTempData(uint8_t bTemperature){
+    
+    memset(commandBuff, 0, 64);
+
+    strcat(commandBuff, "#t");
+
+    addU8Value2CommandBuff(bTemperature);
+
+    strcat(commandBuff, "|~");
+
+
+    esp_ble_gatts_set_attr_value(spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL], strlen(commandBuff), (uint8_t *)commandBuff);
+
+    syncroState = POST_TEMPERATURE_C;
+}
+
+static void closeSyncroData(){
+    memset(commandBuff, 0, 64);
+    strcpy(commandBuff, "#f~");
+
+    esp_ble_gatts_set_attr_value(spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL], strlen(commandBuff), (uint8_t *)commandBuff);
+
+    syncroState = IDLE_SYNC_C;
 }
 
 
@@ -266,23 +931,30 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 
                     ESP_LOGW("ME", "%s --- %i", p_data->write.value, p_data->write.len);
 
-                    char *sendBuffer = malloc(18);
+                    char *tempBuffer = (char *)malloc(18);
 
-                    memset(sendBuffer, 0, 18);
+                    memset(tempBuffer, 0, 18);
                     
+
+                    if(!append2Command(p_data->write.value, p_data->write.len)){
+                        strcpy(tempBuffer, "#n~");
+                        esp_ble_gatts_set_attr_value(spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL], strlen(tempBuffer), (uint8_t *)tempBuffer);
+                    }
+
+                    /*
                     if(append2Command(p_data->write.value, p_data->write.len)){
-                        ESP_LOGI("BLUE", "%s", recvBuff);
-                        strcpy(sendBuffer, "#f~");
+                        //ESP_LOGI("BLUE", "%s", recvBuff);
+                        //strcpy(tempBuffer, "#f~");
                     }
                     else{
-                        strcpy(sendBuffer, "#n~");
+                        strcpy(tempBuffer, "#n~");
                     }
+                    */
                     
 
-                    esp_ble_gatts_set_attr_value(spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL], strlen(sendBuffer), (uint8_t *)sendBuffer);
-    
 
-                    free(sendBuffer);
+
+                    free(tempBuffer);
                     
 
                 }else{
@@ -460,7 +1132,7 @@ void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
                 case POWDER_C_M:
                     injectPowderPlusWaterExtraContainer(myRecipe->modulesArray[i].pulses, myRecipe->modulesArray[i].gr, powderData->refGrPowC);
                 break;
-                case WATER:
+                case WATER_M:
                     injectOnlyWaterLine(dataBytes, myRecipe->modulesArray[i].pulses);
                 break;
             }
@@ -1753,8 +2425,6 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
         if(err == ESP_OK){
             
 
-            /*
-
             size_t strLen;
 
             nvs_get_str(nvsHandle, "recipeName", NULL, &strLen);
@@ -1801,7 +2471,6 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
 
                 enableKey[6] = charNum;
                 moduleTypeKey[10] = charNum;
-                preReadyKey[8] = charNum;
                 pulsesKey[6] = charNum;
                 grKey[2] = charNum;
 
@@ -1812,9 +2481,6 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
                     nvs_get_u8(nvsHandle, moduleTypeKey, &u8Data);
                     recipeData[i].modulesArray[k].moduleType = (RecipeModuleType)u8Data;
 
-                    nvs_get_u8(nvsHandle, preReadyKey, &u8Data);
-                    recipeData[i].modulesArray[k].preReady = (bool)u8Data;
-
                     nvs_get_u16(nvsHandle, pulsesKey, &u16Data);
                     recipeData[i].modulesArray[k].pulses = u16Data;
 
@@ -1823,7 +2489,6 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
 
                 }
             }
-            */
             
             nvs_close(nvsHandle);
         }
@@ -1837,7 +2502,7 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
         err = nvs_open(namespaceName, NVS_READWRITE, &nvsHandle);
 
         if(err == ESP_OK){
-            nvs_set_u8(nvsHandle, "boilerTemp", 91);
+            nvs_set_u8(nvsHandle, "boilerTemp", 89);
             nvs_set_u16(nvsHandle, "password", 1234);
             nvs_set_u32(nvsHandle, "mCounter", 0);
 
@@ -1911,6 +2576,26 @@ static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefD
 }
 
 
+static void checkOnlyRecipeMemContent(const Recipe *recipeData){
+    for(size_t i = 0; i < 13; i++){
+
+
+        ESP_LOGI(CONTROL_TASK_TAG, "%s[%d] (%d):", recipeData[i].recipeName, i, recipeData[i].moduleSize);
+
+        if(recipeData[i].moduleSize > 0){
+
+            for(size_t j = 0; j < recipeData[i].moduleSize; j++){
+                ESP_LOGW(CONTROL_TASK_TAG, "%d: %d - %d - %d", j, recipeData[i].modulesArray[j].moduleType, 
+                                                        recipeData[i].modulesArray[j].pulses, recipeData[i].modulesArray[j].gr);
+            }
+        }
+
+        ESP_LOGI(CONTROL_TASK_TAG, "------------------" );
+        
+   }
+}
+
+
 static void checkMemContent(const Recipe *recipeData, const SystemData *sysData, PowderGramsRefData *powderData){
     /*
     int aSize = sizeof(Recipe);
@@ -1924,7 +2609,7 @@ static void checkMemContent(const Recipe *recipeData, const SystemData *sysData,
    for(size_t i = 0; i < 13; i++){
 
 
-        ESP_LOGI(CONTROL_TASK_TAG, "%s (%d):", recipeData[i].recipeName, recipeData[i].moduleSize);
+        ESP_LOGI(CONTROL_TASK_TAG, "%s[%d] (%d):", recipeData[i].recipeName, i, recipeData[i].moduleSize);
 
         if(recipeData[i].moduleSize > 0){
 
@@ -1973,6 +2658,7 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
     recipeData[0].modulesArray[0].pulses = 154;         //148
 
     recipeData[0].moduleSize = 1;
+    recipeData[0].recipeCounter = 0;
 
 
     recipeData[1].recipeName = (char *)malloc(17);
@@ -1982,10 +2668,11 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
     recipeData[1].modulesArray = (RecipeModuleStruct *)malloc(sizeof(RecipeModuleStruct) * 2);
     recipeData[1].modulesArray[0].moduleType = COFFEE_M;
     recipeData[1].modulesArray[0].pulses = 114;             
-    recipeData[1].modulesArray[1].moduleType = WATER_C;
+    recipeData[1].modulesArray[1].moduleType = WATER_M;
     recipeData[1].modulesArray[1].pulses = 10;
 
     recipeData[1].moduleSize = 2;
+    recipeData[1].recipeCounter = 0;
 
 
     recipeData[2].recipeName = (char *)malloc(17);
@@ -1996,10 +2683,11 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
     recipeData[2].modulesArray[0].moduleType = COFFEE_M;
     recipeData[2].modulesArray[0].pulses = 78;
 
-    recipeData[2].modulesArray[1].moduleType = WATER_C;
+    recipeData[2].modulesArray[1].moduleType = WATER_M;
     recipeData[2].modulesArray[1].pulses = 29;
 
     recipeData[2].moduleSize = 2;
+    recipeData[2].recipeCounter = 0;
 
 
     recipeData[3].recipeName = (char *)malloc(17);
@@ -2012,6 +2700,7 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
     recipeData[3].modulesArray[0].pulses = 246;         //193
 
     recipeData[3].moduleSize = 1;
+    recipeData[3].recipeCounter = 0;
 
 
     recipeData[4].recipeName = (char *)malloc(17);
@@ -2027,6 +2716,7 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
     recipeData[4].modulesArray[1].gr = 28;
 
     recipeData[4].moduleSize = 2;
+    recipeData[4].recipeCounter = 0;
 
 
     recipeData[5].recipeName = (char *)malloc(17);
@@ -2042,6 +2732,7 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
     recipeData[5].modulesArray[1].gr = 22;
 
     recipeData[5].moduleSize = 2;
+    recipeData[5].recipeCounter = 0;
 
 
     for(size_t i = 6; i < 13; i++){
@@ -2167,6 +2858,7 @@ void initControlTask(){
 
 static void controlTask(void *pvParameters){
 
+    syncroState = IDLE_SYNC_C;    
     bool btEnabled = false;
     ControlData controlData = {IDLE_C, 0, PAGE_1};
     //ContsPowderData conPowderData = {1.8333f, 1.8333f, 1.8333f, 80737.37};
@@ -2183,22 +2875,44 @@ static void controlTask(void *pvParameters){
 
     memset(outputIO_Buff, 0, 2);
 
-    recvBuff = malloc(64);
+    recvBuff = (char *)malloc(64);
     memset(recvBuff, 0, 64);
+
+    commandBuff = (char *)malloc(64);
+    memset(commandBuff, 0, 64);
 
     initMemData(recipeList, &systemData, &powderGramsRefData);
 
-    systemData.boilerTemperature = 89;
+    //systemData.boilerTemperature = 89;
 
     xQueueSend(xQueueData2Boiler, (void *) &systemData.boilerTemperature, (TickType_t) 10);
 
-    loadFakeMemContent(recipeList, &systemData, &powderGramsRefData);
+    //loadFakeMemContent(recipeList, &systemData, &powderGramsRefData);
 
     checkMemContent(recipeList, &systemData, &powderGramsRefData);
+    //checkOnlyRecipeMemContent(recipeList);
 
     initBLUE();
 
+
     while(true){
+
+        if(syncroState != IDLE_SYNC_C){
+            switch(syncroState){
+                case SEND_RECIPES_C:
+                    sendAllRecipes(recipeList);
+                break;
+                case SEND_TEMPERATURE_C:
+                    sendTempData(systemData.boilerTemperature);
+                break;
+                case END_SYNC_C:
+                    closeSyncroData();
+                break;
+                default:
+            }
+        }
+            
+    
 
        
        vTaskDelay(pdMS_TO_TICKS(500)); //100
