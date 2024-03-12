@@ -133,7 +133,7 @@ static void clearCoffeeChamber(uint8_t *dataBytes);
 static void setBrewer2StartPosition(uint8_t *dataBytes);
 static void setBrewer2InjectPosition(uint8_t *dataBytes);
 static void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses);
-static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay);
+static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay, bool thirdPowder);
 static void injectPowderPlusWaterExtraContainer(const uint16_t pulses, const uint8_t gr, uint8_t powderRefGram);
 static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses);
 static void injectOnlyWaterLineManual(uint8_t *dataBytes);
@@ -155,7 +155,16 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
 static void btSubTask(bool *btEnabled);
 
 
-
+static void addRecipeIndex2CommandBuff(uint8_t recipeIndex);
+static void addU8Value2CommandBuff(uint8_t u8Value);
+static void addU16Value2CommandBuff(uint16_t u16Value);
+static void sendAllRecipes(Recipe *recipe);
+static void processBlueData(uint8_t hIndex, uint8_t tIndex);
+static void processNullData(uint8_t hIndex, uint8_t tIndex);
+static void processTempData(uint8_t hIndex, uint8_t tIndex);
+static bool append2Command(uint8_t *dataFromBlue, uint16_t dataSize);
+static void sendTempData(uint8_t bTemperature);
+static void closeSyncroData();
 static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
 static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);

@@ -54,6 +54,7 @@
 #define IN_SERIAL_UI_PIN    GPIO_NUM_35
 #define RCK_DISPLAY_PIN     GPIO_NUM_25
 #define SER_DISPLAY_PIN     GPIO_NUM_26
+#define POWDER_C_PIN        GPIO_NUM_17
 
 #define TXD_2_PIN           GPIO_NUM_17
 #define RXD_2_PIN           GPIO_NUM_16
@@ -87,6 +88,9 @@
 #define INTERRUPTS_TASK_TAG     "INTERRUPTS_T"
 #define UI_TASK_TAG             "UI_TASK_T"
 #define BOILER_TASK_TAG         "BOILER_TASK_T"
+
+#define NEXTION_LCD                 0
+#define SHOW_BOILER_TEMP            1
 
 #define SPP_PROFILE_NUM             1
 #define SPP_PROFILE_APP_IDX         0

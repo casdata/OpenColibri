@@ -13,6 +13,7 @@ typedef enum{
     BOOTING_UI,
     MAINTENANCE_UI,
     CLEAN_UI,
+    PRE_PREPARE_DRINK_UI,
     PREPARE_DRINK_UI,
     ERROR_UI
 } UiState;

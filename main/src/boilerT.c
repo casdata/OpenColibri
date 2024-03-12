@@ -387,6 +387,8 @@ static void boilerTask(void *pvParameters){
     PID_DataStruct myPID_Data = {true, 87.0f, 220.0f, 0.0f, 120.0f, 0.0f, 8191.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0};
     myPID_Data.setPoint = targetTemp - 3.0f;
     
+    double refTimeTemp = esp_timer_get_time();
+    double cTimeTemp;
 
     char *tempBuff = malloc(60);
 
@@ -477,16 +479,18 @@ static void boilerTask(void *pvParameters){
         }
         
 
-        boilerStructData.toSend = true;
-        getMessage2Send2Nextion(tempBuff, &boilerStructData);
-        uart_write_bytes(UART_PORT_N, tempBuff, strlen(tempBuff));
+        if(NEXTION_LCD){
+            boilerStructData.toSend = true;
+            getMessage2Send2Nextion(tempBuff, &boilerStructData);
+            uart_write_bytes(UART_PORT_N, tempBuff, strlen(tempBuff));
 
-        boilerStructData.toSend = false;
-        getMessage2Send2Nextion(tempBuff, &boilerStructData);
-        uart_write_bytes(UART_PORT_N, tempBuff, strlen(tempBuff));
+            boilerStructData.toSend = false;
+            getMessage2Send2Nextion(tempBuff, &boilerStructData);
+            uart_write_bytes(UART_PORT_N, tempBuff, strlen(tempBuff));
 
-        if(checkDataFromNextionPID_Tunner(&myPID_Data))
-            ESP_LOGE(BOILER_TASK_TAG, "PID DATA UPDATED!! ");
+            if(checkDataFromNextionPID_Tunner(&myPID_Data))
+                ESP_LOGE(BOILER_TASK_TAG, "PID DATA UPDATED!! ");
+        }
     
 
         if(myPID_Data.controllerState)
@@ -502,6 +506,17 @@ static void boilerTask(void *pvParameters){
         ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
 
         
+        if(SHOW_BOILER_TEMP){
+            cTimeTemp = esp_timer_get_time() - refTimeTemp;
+
+            if(cTimeTemp >= 3000000){                   //3 seg
+                refTimeTemp = esp_timer_get_time();
+
+                ESP_LOGW(BOILER_TASK_TAG, "TEMP: %f | %f - %d", 
+                    boilerStructData.thermistorTemp, myPID_Data.setPoint, boilerState);
+            }
+        }
+
         /*
         ESP_LOGW(BOILER_TASK_TAG, "TEMP: %f - %f - %f - %f - %d", 
             boilerStructData.thermistorTemp, myPID_Data.setPoint,

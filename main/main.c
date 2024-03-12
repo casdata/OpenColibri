@@ -74,6 +74,7 @@ static void initGPIO(){
     gpio_reset_pin(BOILER_PIN);
     gpio_reset_pin(STATUS_LED_PIN);
 
+
     gpio_set_direction(CLK_UI_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(SH_LD_UI_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(RCK_DISPLAY_PIN, GPIO_MODE_OUTPUT);
@@ -103,6 +104,14 @@ static void initGPIO(){
     gpio_set_level(MCP23017_OUT_RS_PIN, 1);
     //gpio_set_level(BOILER_PIN, 0);
     gpio_set_level(STATUS_LED_PIN, 0);
+
+    if(!NEXTION_LCD){
+        gpio_reset_pin(POWDER_C_PIN);
+
+        gpio_set_direction(POWDER_C_PIN, GPIO_MODE_OUTPUT);
+
+        gpio_set_level(POWDER_C_PIN, 0);
+    }
 }
 
 static void initI2C(){
@@ -189,7 +198,10 @@ void app_main(void)
     initGPIO();
     initI2C();
     initLEDC();
-    initNextion();
+
+    if(NEXTION_LCD)
+        initNextion();
+
     initPID();
     initNVS();
 

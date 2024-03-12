@@ -471,7 +471,7 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
             ESP_LOGW(UI_TASK_TAG, "prepareDrinkState NOTIFICATION");
 
             *previousUiState = *currentUiState;
-            *currentUiState = PREPARE_DRINK_UI;
+            *currentUiState = PRE_PREPARE_DRINK_UI;
 
         }
         
@@ -530,9 +530,36 @@ static void inBootingCodeState(UiData *myUiData){
 }
 
 static void showPreparingDrinkName(UiData *myUiData){
+    static int blinkCount = 0;
+    static bool showMessage = true;
 
+    bool updateLcd = false;
+
+    blinkCount++;
+
+    if(showMessage){
+        if(blinkCount > 4){
+            updateLcd = true;
+            showMessage = false;
+        }
+    }
+    else{
+        if(blinkCount > 1){
+            updateLcd = true;
+            showMessage = true;
+        }
+    }
+
+    if(updateLcd){
+        blinkCount = 0;
+
+        fullClearLcdScreen();
+    }
+
+    if(showMessage)
+        write2LCD(myUiData->strData, strlen(myUiData->strData), 1);
+    
 }
-
 
 
 
@@ -638,7 +665,7 @@ static void uiTask(void *pvParameters){
     //double refTimeUi, cTimeUi;
 
     initLcd();
-    write2LCD("OpenColibri V006", 16, 0);
+    write2LCD("OpenColibri V008", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
@@ -692,13 +719,27 @@ static void uiTask(void *pvParameters){
                     write2LCD("CLEANING....", 12, 1);
                 }
             break;
+            case PRE_PREPARE_DRINK_UI:
+                if(uiUpdate.updateDataStr){
+                    uiUpdate.updateDataStr = false;
+
+                    currentUiState = PREPARE_DRINK_UI;
+                    previousUiState = PREPARE_DRINK_UI;
+                }
+
+            break;
             case PREPARE_DRINK_UI:
+
+                showPreparingDrinkName(&uiData);
+                
+                /*
                 if(previousUiState != PREPARE_DRINK_UI && uiUpdate.updateDataStr){
                     previousUiState = currentUiState;
                     uiUpdate.updateDataStr = false;
 
                     fullClearLcdScreen();
                     write2LCD(uiData.strData, strlen(uiData.strData), 0);
+                    */
 
                     /*
                     if(uiUpdate.updateDataStr){
@@ -721,7 +762,7 @@ static void uiTask(void *pvParameters){
                         }
                     }
                     */
-                }
+                //}
             break;
             case ERROR_UI:
                 inErrorCodeState(errorCode);
