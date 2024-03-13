@@ -10,7 +10,8 @@
 
 typedef enum{
     IDLE_C = 0,
-    MAINTENANCE_C,
+    MENU_C,
+    ENABLE_BLUE_C,
     CLEAN_C,
     DRINK_C,
     WATER_C,
@@ -108,18 +109,7 @@ struct gatts_profile_inst {
 
 
 
-
-/*
-static void runDrink1(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
-static void runDrink2(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
-static void runDrink3(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
-static void runDrink4(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
-static void runDrink5(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
-static void runDrink6(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
-static void runDrink7(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
-static void runDrink8(uint8_t *dataBytes, ContsPowderData *contsPowData);   //2 delete
-*/
-static void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *powderData);
+static bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *powderData, uint8_t *boilerPulse);
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
 static bool bitChangedInByte(uint8_t *byteData, const uint8_t bitPos, const bool newValue);
 static bool differentRelayState(uint8_t *byteData, const OutputRelays outputRelays, const bool newValue);
@@ -133,11 +123,12 @@ static void clearCoffeeChamber(uint8_t *dataBytes);
 static void setBrewer2StartPosition(uint8_t *dataBytes);
 static void setBrewer2InjectPosition(uint8_t *dataBytes);
 static void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses);
-static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay, bool thirdPowder);
-static void injectPowderPlusWaterExtraContainer(const uint16_t pulses, const uint8_t gr, uint8_t powderRefGram);
-static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses);
+static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay, bool thirdPowder, uint8_t *boilerPulse);
+static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses, uint8_t *boilerPulse);
 static void injectOnlyWaterLineManual(uint8_t *dataBytes);
+static void doBoilerPulse(uint8_t *dataBytes);
 static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop);
+static void add2Counter(const uint8_t repIndex);
 static void cleanMachine(uint8_t *dataBytes);
 static void calculatePulseTime(uint8_t *dataBytes);
 static void waitMachine2Start(uint8_t *dataBytes);
@@ -147,12 +138,12 @@ static void syncronizeAllTasks();
 static bool checkWaterBtnFromUi();
 static bool checkStopBtnFromUi();
 
+static void clearInputBtnQueue();
 static void checkQueuesFromUi(ControlData *controlData);
 static void initMemData(Recipe *recipeData, SystemData *sysData, PowderGramsRefData *powderData);
 static void checkMemContent(const Recipe *recipeData, const SystemData *sysData, PowderGramsRefData *powderData);
 static void checkOnlyRecipeMemContent(const Recipe *recipeData);
 static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGramsRefData *powderData);
-static void btSubTask(bool *btEnabled);
 
 
 static void addRecipeIndex2CommandBuff(uint8_t recipeIndex);

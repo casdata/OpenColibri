@@ -22,11 +22,11 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, WaterFlowDa
             xTaskNotify(uiTaskH, 0x01, eSetBits);
         }
 
-        ESP_LOGI(INTERRUPTS_TASK_TAG, "send noti close w_inlet");
+        //ESP_LOGI(INTERRUPTS_TASK_TAG, "send noti close w_inlet");
     }
 
-    ESP_LOGE(INTERRUPTS_TASK_TAG, "wOver: %d brewer: %d air: %d releC: %d ", inputStruct->wasteOverflowSw , 
-        inputStruct->coffeeBrewerSw, inputStruct->airBreakSw, inputStruct->coffeeReleaseSw);
+    //ESP_LOGE(INTERRUPTS_TASK_TAG, "wOver: %d brewer: %d air: %d releC: %d ", inputStruct->wasteOverflowSw , 
+        //inputStruct->coffeeBrewerSw, inputStruct->airBreakSw, inputStruct->coffeeReleaseSw);
 
     xQueueOverwrite(xQueueInputsSw, (void *) inputStruct);
 }
@@ -156,37 +156,18 @@ static void interruptsTask(void *pvParameters){
 
                             xQueueSend(xQueueInputTimePerPulse, (void *) &pulseTestData.pulseTime, portMAX_DELAY);
 
-                            ESP_LOGI(INTERRUPTS_TASK_TAG, "pulseTime -> %lf", pulseTestData.pulseTime);
+                            //ESP_LOGI(INTERRUPTS_TASK_TAG, "pulseTime -> %lf", pulseTestData.pulseTime);
                         }
 
                         checkingCount = false;
 
-                        ESP_LOGI(INTERRUPTS_TASK_TAG, "%d -%d", count, targetCount);
+                        //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d -%d", count, targetCount);
                     }
-                    //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d -%d", count, targetCount);
-                    //xQueueOverwrite(xQueueInputPulse, (void *) &count);
+
                 break;
                 case MCP23017_INTB_PIN:
 
                     readInputSws(&inputSwStruct, inputIO_Buff, &waterFlowData);
-
-                    /*
-                    ESP_LOGE(ALTERNATIVE_TASK_TAG, "Read it!!");
-
-                    ESP_LOGW(MAIN_TASK_TAG, "nIO -> %d %d %d %d %d %d %d %d", readSW(inputIO_Buff, 7),
-                             readSW(inputIO_Buff, 6),
-                             readSW(inputIO_Buff, 5),
-                             readSW(inputIO_Buff, 4),
-                             readSW(inputIO_Buff, 3),
-                             readSW(inputIO_Buff, 2),
-                             readSW(inputIO_Buff, 1),
-                             readSW(inputIO_Buff, 0));
-
-
-                    //gpio_set_level(BOILER_PIN, getBitFromByte(inputIO_Buff, 3));
-                    gpio_set_level(STATUS_LED_PIN, getBitFromByte(inputIO_Buff, 2));
-                    */
-
 
                 break;
             }

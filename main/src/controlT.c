@@ -192,7 +192,7 @@ static void sendAllRecipes(Recipe *recipe){
 
             strcat(commandBuff, "~");
 
-            ESP_LOGI(CONTROL_TASK_TAG, "command[%d]: %s", recipeIndex, commandBuff);
+            //ESP_LOGI(CONTROL_TASK_TAG, "command[%d]: %s", recipeIndex, commandBuff);
 
             recipeIndex++;
 
@@ -214,7 +214,7 @@ static void sendAllRecipes(Recipe *recipe){
 
         esp_ble_gatts_set_attr_value(spp_handle_table[SPP_IDX_SPP_DATA_NTY_VAL], strlen(innerBuffer), (uint8_t *)innerBuffer);
 
-        ESP_LOGI(CONTROL_TASK_TAG, "sending recp[%d]: %s", tempPC, innerBuffer);
+        //ESP_LOGI(CONTROL_TASK_TAG, "sending recp[%d]: %s", tempPC, innerBuffer);
 
         if(tempPC >= strlen(commandBuff)){ 
 
@@ -619,7 +619,7 @@ static void processBlueData(uint8_t hIndex, uint8_t tIndex){
 
 static void processNullData(uint8_t hIndex, uint8_t tIndex){
 
-    checkOnlyRecipeMemContent(recipeList);
+    //checkOnlyRecipeMemContent(recipeList);
 
     char *namespaceName = (char *)malloc(10);
     strcpy(namespaceName, "recipe0");
@@ -713,7 +713,7 @@ static void processNullData(uint8_t hIndex, uint8_t tIndex){
     free(pulsesKey);
     free(grKey);
 
-    checkOnlyRecipeMemContent(recipeList);
+    //checkOnlyRecipeMemContent(recipeList);
 
 }
 
@@ -793,11 +793,11 @@ static bool append2Command(uint8_t *dataFromBlue, uint16_t dataSize){
 
     if(commandFound){
 
-        ESP_LOGW(CONTROL_TASK_TAG, "commandFound %s", recvBuff);
+        //ESP_LOGW(CONTROL_TASK_TAG, "commandFound %s", recvBuff);
 
         switch(recvBuff[headIndex + 1]){
             case 'n':                                               //get next data
-                ESP_LOGW(CONTROL_TASK_TAG, "n command");
+                //ESP_LOGW(CONTROL_TASK_TAG, "n command");
                 switch(syncroState){
                     case SEND_RECIPES_C:
                         sendNextData = true;
@@ -813,20 +813,20 @@ static bool append2Command(uint8_t *dataFromBlue, uint16_t dataSize){
 
             break;
             case 'z':                                               //get all data
-                ESP_LOGW(CONTROL_TASK_TAG, "z command");
+                //ESP_LOGW(CONTROL_TASK_TAG, "z command");
                 syncroState = SEND_RECIPES_C;
                 sendNextData = true;
             break;
             case 'd':                                               //data recipe
-                ESP_LOGW(CONTROL_TASK_TAG, "d command");
+                //ESP_LOGW(CONTROL_TASK_TAG, "d command");
                 processBlueData(headIndex, tailIndex);
             break;
             case 'D':                                               //data null recipe
-                ESP_LOGW(CONTROL_TASK_TAG, "D command");
+                //ESP_LOGW(CONTROL_TASK_TAG, "D command");
                 processNullData(headIndex, tailIndex);
             break;
             case 't':
-                ESP_LOGW(CONTROL_TASK_TAG, "t command");
+                //ESP_LOGW(CONTROL_TASK_TAG, "t command");
                 processTempData(headIndex, tailIndex);
             break;
         }
@@ -1034,7 +1034,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 }
 
 
-void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *powderData){
+bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *powderData, uint8_t *boilerPulse){
     
     bool runIt = true;
     bool preCoffee = false;
@@ -1082,13 +1082,21 @@ void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
                         vTaskDelay(pdMS_TO_TICKS(1000));     
                     }
                     else{
-                        grindAndDeliver(dataBytes, false);
+                        runIt = grindAndDeliver(dataBytes, false);
 
                         vTaskDelay(pdMS_TO_TICKS(1000));
+
+                        if(!runIt)
+                            break;
 
                         setBrewer2InjectPosition(dataBytes);
 
                         vTaskDelay(pdMS_TO_TICKS(1000));
+                    }
+
+                    if(*boilerPulse == 1){
+                        *boilerPulse = 0;
+                        doBoilerPulse(dataBytes);
                     }
 
                     injecBrewerWater(dataBytes, myRecipe->modulesArray[i].pulses);
@@ -1098,6 +1106,13 @@ void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
                     setBrewer2StartPosition(dataBytes);
                 break;
                 case COFFEE_PRE_M:
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+
+                    if(*boilerPulse == 1){
+                        *boilerPulse = 0;
+                        doBoilerPulse(dataBytes);
+                    }
+
                     injecBrewerWater(dataBytes, myRecipe->modulesArray[i].pulses);
 
                     vTaskDelay(pdMS_TO_TICKS(2500));
@@ -1105,17 +1120,17 @@ void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
                     setBrewer2StartPosition(dataBytes);
                 break;
                 case POWDER_A_M:
-                    injectPowderPlusWater(dataBytes, myRecipe->modulesArray[i].pulses, myRecipe->modulesArray[i].gr, powderData->refGrPowA, DOSER_DEVICE_1, false);
+                    injectPowderPlusWater(dataBytes, myRecipe->modulesArray[i].pulses, myRecipe->modulesArray[i].gr, powderData->refGrPowA, DOSER_DEVICE_1, false, boilerPulse);
                 break;
                 case POWDER_B_M:
-                    injectPowderPlusWater(dataBytes, myRecipe->modulesArray[i].pulses, myRecipe->modulesArray[i].gr, powderData->refGrPowB, DOSER_DEVICE_2, false);
+                    injectPowderPlusWater(dataBytes, myRecipe->modulesArray[i].pulses, myRecipe->modulesArray[i].gr, powderData->refGrPowB, DOSER_DEVICE_2, false, boilerPulse);
                 break;
                 case POWDER_C_M:
                     if(!NEXTION_LCD)
-                        injectPowderPlusWater(dataBytes, myRecipe->modulesArray[i].pulses, myRecipe->modulesArray[i].gr, powderData->refGrPowB, DOSER_DEVICE_2, true);
+                        injectPowderPlusWater(dataBytes, myRecipe->modulesArray[i].pulses, myRecipe->modulesArray[i].gr, powderData->refGrPowB, DOSER_DEVICE_2, true, boilerPulse);
                 break;
                 case WATER_M:
-                    injectOnlyWaterLine(dataBytes, myRecipe->modulesArray[i].pulses);
+                    injectOnlyWaterLine(dataBytes, myRecipe->modulesArray[i].pulses, boilerPulse);
                 break;
             }
 
@@ -1127,150 +1142,10 @@ void runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
         }
     }
 
+    return runIt;
 
 }
 
-/*
-
-void runDrink1(uint8_t *dataBytes, ContsPowderData *contsPowData){
-
-    grindAndDeliver(dataBytes, false);
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    setBrewer2InjectPosition(dataBytes);
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    
-    injecBrewerWater(dataBytes, 142);
-    
-
-    vTaskDelay(pdMS_TO_TICKS(2500));
-
-    setBrewer2StartPosition(dataBytes);  
-
-}
-
-void runDrink2(uint8_t *dataBytes, ContsPowderData *contsPowData){
-
-    grindAndDeliver(dataBytes, false);
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    setBrewer2InjectPosition(dataBytes);
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    xTaskNotify(boilerTaskH, 0x10, eSetBits);
-    injecBrewerWater(dataBytes, 220);                //78
-    xTaskNotify(boilerTaskH, 0x08, eSetBits);
-
-    vTaskDelay(pdMS_TO_TICKS(2500));
-
-    setBrewer2StartPosition(dataBytes);  
-      
-
-}
-
-void runDrink3(uint8_t *dataBytes, ContsPowderData *contsPowData){
-
-    */
-    //injectPowderPlusWater(dataBytes, 100);
-    /*
-    setRelay(dataBytes, DOSER_DEVICE_1);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    double tTime = esp_timer_get_time();
-
-    vTaskDelay(pdMS_TO_TICKS(6000));   //11 gr
-
-    ESP_LOGE(CONTROL_TASK_TAG, "time: %lf", (esp_timer_get_time() - tTime));
-
-    resetRelay(dataBytes, DOSER_DEVICE_1);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    vTaskDelay(pdMS_TO_TICKS(100));
-    */
-
-/*
-   xTaskNotify(boilerTaskH, 0x20, eSetBits);
-   injectPowderPlusWater(dataBytes, 60, contsPowData, POWDER_A_M);
-   xTaskNotify(boilerTaskH, 0x08, eSetBits);
-
-}
-
-void runDrink4(uint8_t *dataBytes, ContsPowderData *contsPowData){
-
-    injectPowderPlusWater(dataBytes, 128, contsPowData, POWDER_A_M);      
-    xTaskNotify(boilerTaskH, 0x08, eSetBits);
-
-}
-
-void runDrink5(uint8_t *dataBytes, ContsPowderData *contsPowData){
-    xTaskNotify(boilerTaskH, 0x20, eSetBits);
-
-    vTaskDelay(pdMS_TO_TICKS(7000));
-
-    setRelay(dataBytes, SOLENOID_VALVE_1);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    vTaskDelay(pdMS_TO_TICKS(700));
-    
-    setRelay(dataBytes, PUMP);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-
-    vTaskDelay(pdMS_TO_TICKS(22000));
-
-
-    resetRelay(dataBytes, PUMP);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    xTaskNotify(boilerTaskH, 0x08, eSetBits);
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    resetRelay(dataBytes, SOLENOID_VALVE_1);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    ESP_LOGE(CONTROL_TASK_TAG, "Inject only water: OFF");
-*/
-
-    /*
-    setBrewer2InjectPosition(dataBytes);
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    xTaskNotify(boilerTaskH, 0x10, eSetBits);
-    injecBrewerWater(dataBytes, 280);
-    xTaskNotify(boilerTaskH, 0x08, eSetBits);
-
-    vTaskDelay(pdMS_TO_TICKS(2500));
-
-    setBrewer2StartPosition(dataBytes);
-
-    //injecBrewerWater(dataBytes, 280);   //280 is the max
-    */
-//}
-
-/*
-void runDrink6(uint8_t *dataBytes, ContsPowderData *contsPowData){
-    setBrewer2InjectPosition(dataBytes);
-
-    vTaskDelay(pdMS_TO_TICKS(5000));
-
-    setBrewer2StartPosition(dataBytes);
-}
-
-void runDrink7(uint8_t *dataBytes, ContsPowderData *contsPowData){
-
-}
-
-void runDrink8(uint8_t *dataBytes, ContsPowderData *contsPowData){
-    calculatePulseTime(dataBytes);
-}
-*/
 
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
     i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
@@ -1452,7 +1327,7 @@ static void checkAirBreak(uint8_t *dataBytes){
 
             setRelay(dataBytes, WATER_INLET_VALVE);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
-            ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
+            //ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
 
             xTaskNotify(intTaskH, 0x01, eSetBits);                  //notify interrupt task for water flow control
 
@@ -1471,14 +1346,14 @@ static void checkAirBreak(uint8_t *dataBytes){
                     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
                     vTaskDelay(pdMS_TO_TICKS(30));
 
-                    ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
+                    //ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
 
                     onWait = false;
                 }
 
             }while(onWait);
 
-            ESP_LOGI(CONTROL_TASK_TAG, "END AIRBREAK CHECK");
+            //ESP_LOGI(CONTROL_TASK_TAG, "END AIRBREAK CHECK");
         }
     }
 
@@ -1525,7 +1400,7 @@ void clearCoffeeChamber(uint8_t *dataBytes){
     resetRelay(dataBytes, COFFEE_RELEASE_MAGNET);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
 
-    ESP_LOGI(CONTROL_TASK_TAG, "Coffee released :)");
+    //ESP_LOGI(CONTROL_TASK_TAG, "Coffee released :)");
 
     vTaskDelay(pdMS_TO_TICKS(700));
 }
@@ -1573,7 +1448,7 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
     double startTime = 0;
     double endTime = 0;
 
-    ESP_LOGI(CONTROL_TASK_TAG, "Inject brewer water: ON");
+    //ESP_LOGI(CONTROL_TASK_TAG, "Inject brewer water: ON");
 
     xTaskNotify(boilerTaskH, 0x10, eSetBits);
 
@@ -1595,7 +1470,7 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
         if((ulNotifiedValue & 0x08) >> 3){
             onWait = false;
             endTime = esp_timer_get_time() - startTime;
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP %lf", endTime);
+            //ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP %lf", endTime);
         }
 
     }while(onWait);
@@ -1609,162 +1484,17 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
     resetRelay(dataBytes, THREE_WAY_VALVE);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
-    ESP_LOGE(CONTROL_TASK_TAG, "Inject brewer water: OFF");
+    //ESP_LOGE(CONTROL_TASK_TAG, "Inject brewer water: OFF");
 
     xTaskNotify(boilerTaskH, 0x08, eSetBits);
 }
 
-/*
-static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay, bool thirdPowder){
+
+static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay, bool thirdPowder, uint8_t *boilerPulse){
 
     uint32_t ulNotifiedValue = 0;
     bool onWait = true; 
     bool injectPowder = true;
-
-
-    bool gramsTimeGreaterThanHeatTime = true;
-    bool withPreGramsTime = false;
-    bool preHeatOn = false;
-    bool prePowderOn = false;
-
-
-    //15g -> 10s
-    int targetGrams = 40;                                                       // 40 gr
-    double preHeatTime = 7000000;                                               // 7 sec
-
-
-    double rTime = 0;
-    double cTime = 0;
-
-    double waterR_Time = 0;
-    double waterC_Time = 0;
-
-    //16000000 16 seg * 1000000
-
-    //10 seg = 15 gr
-    //12 seg = 18 gr
-    double tTime = ((double)((float)gr * 10.0f)/((float)powderRefGram)) * 1000000;  //error
-
-
-    
-    ESP_LOGW(CONTROL_TASK_TAG, "powder1: %d - %lf", gr, tTime);
-
-    
-    ESP_LOGI(CONTROL_TASK_TAG, "Inject powder water: ON ");
-
-    xTaskNotify(boilerTaskH, 0x20, eSetBits);
-
-    setRelay(dataBytes, SOLENOID_VALVE_2);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    vTaskDelay(pdMS_TO_TICKS(700));
-
-    setRelay(dataBytes, PUMP);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    waterR_Time = esp_timer_get_time();
-
-    vTaskDelay(pdMS_TO_TICKS(500));
-
-    setRelay(dataBytes, WHIPPER);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
-
-    xQueueSend(xQueueInputPulse, (void *) &pulses, portMAX_DELAY);
-
-    vTaskDelay(pdMS_TO_TICKS(400));
-
-    if(thirdPowder)
-        gpio_set_level(POWDER_C_PIN, 1);
-    else{
-        setRelay(dataBytes, outputRelay);
-        writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-    }
-    
-
-    rTime = esp_timer_get_time();
-
-    do{
-        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, pdMS_TO_TICKS(200));
-
-        if((ulNotifiedValue & 0x08) >> 3){
-            onWait = false;
-
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
-        }
-
-        if(injectPowder && onWait){
-            cTime = esp_timer_get_time() - rTime;
-
-            if(cTime >= tTime){
-                injectPowder = false;
-        
-                ESP_LOGI(CONTROL_TASK_TAG, "TURNING DOSER OFF");
-
-            
-                if(thirdPowder)
-                    gpio_set_level(POWDER_C_PIN, 0);
-                else{
-                    resetRelay(dataBytes, outputRelay);
-                    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-                }
-        
-            }
-        }
-
-    }while(onWait);
-
-    if(injectPowder){
-        if(thirdPowder)
-            gpio_set_level(POWDER_C_PIN, 0);
-        else{
-            resetRelay(dataBytes, outputRelay);
-            writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(400));
-    }
-    else
-        vTaskDelay(pdMS_TO_TICKS(200));
-
-    resetRelay(dataBytes, PUMP);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    waterC_Time = esp_timer_get_time() - waterR_Time;
-
-    vTaskDelay(pdMS_TO_TICKS(700));
-
-    resetRelay(dataBytes, SOLENOID_VALVE_2);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    resetRelay(dataBytes, WHIPPER);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
-
-    ESP_LOGE(CONTROL_TASK_TAG, "Inject powder water: OFF - %lf - %lf | water: %lf - %lf", cTime, tTime,
-                                                        waterC_Time, waterR_Time);
-
-    xTaskNotify(boilerTaskH, 0x08, eSetBits);
-
-}
-*/
-
-static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay, bool thirdPowder){
-
-    uint32_t ulNotifiedValue = 0;
-    bool onWait = true; 
-    bool injectPowder = true;
-
-
-    bool gramsTimeGreaterThanHeatTime = true;
-    bool withPreGramsTime = false;
-    bool preHeatOn = false;
-    bool prePowderOn = false;
-
-
-    //15g -> 10s
-    int targetGrams = 40;                                                       //** 40 gr
-    double preHeatTime = 7000000;                                               //** 7 sec
 
 
     double rTime = 0;
@@ -1828,13 +1558,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
     onWait = true;
     cTime = 0;
     rTime = 0;
-    
-    ESP_LOGW(CONTROL_TASK_TAG, "powder1: %d - %lf", gr, powderTime);
 
-    
-    ESP_LOGI(CONTROL_TASK_TAG, "Inject powder water: ON ");
-
-    
+    if(*boilerPulse == 1){
+        *boilerPulse = 0;
+        doBoilerPulse(dataBytes);
+    }
 
     xTaskNotify(boilerTaskH, 0x20, eSetBits);
 
@@ -1857,7 +1585,6 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
 
     vTaskDelay(pdMS_TO_TICKS(400));
 
-    
         
     if(thirdPowder)
         gpio_set_level(POWDER_C_PIN, 1);
@@ -1879,7 +1606,7 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
         if((ulNotifiedValue & 0x08) >> 3){
             onWait = false;
 
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
+            //ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
         }
 
 
@@ -1889,9 +1616,8 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
             if(cTime >= powderTime){
                 injectPowder = false;
         
-                ESP_LOGI(CONTROL_TASK_TAG, "TURNING DOSER OFF");
+                //ESP_LOGI(CONTROL_TASK_TAG, "TURNING DOSER OFF");
 
-                
                 if(thirdPowder)
                     gpio_set_level(POWDER_C_PIN, 0);
                 else{
@@ -1941,7 +1667,7 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
 
 
 
-    ESP_LOGE(CONTROL_TASK_TAG, "Inject powder water: OFF - %lf - %lf| puls: %d | gr: %d", powderTime, pulseTime, pulses, gr);
+    //ESP_LOGE(CONTROL_TASK_TAG, "Inject powder water: OFF - %lf - %lf| puls: %d | gr: %d", powderTime, pulseTime, pulses, gr);
 
     xTaskNotify(boilerTaskH, 0x08, eSetBits);
 
@@ -1949,17 +1675,16 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
 }
 
 
-static void injectPowderPlusWaterExtraContainer(const uint16_t pulses, const uint8_t gr, uint8_t powderRefGram){
-
-}
-
-
-static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses){
+static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses, uint8_t *boilerPulse){
 
     uint32_t ulNotifiedValue = 0;
     bool onWait = true;
 
-    ESP_LOGI(CONTROL_TASK_TAG, "Inject only water line: ON");
+    //ESP_LOGI(CONTROL_TASK_TAG, "Inject only water line: ON");
+    if(*boilerPulse == 1){
+        *boilerPulse = 0;
+        doBoilerPulse(dataBytes);
+    }
 
     xTaskNotify(boilerTaskH, 0x20, eSetBits);
 
@@ -1979,7 +1704,7 @@ static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses){
 
         if((ulNotifiedValue & 0x08) >> 3){
             onWait = false;
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
+            //ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
         }
 
     }while(onWait);
@@ -1993,7 +1718,7 @@ static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses){
     resetRelay(dataBytes, SOLENOID_VALVE_1);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
-    ESP_LOGE(CONTROL_TASK_TAG, "Inject only water line: OFF");
+    //ESP_LOGE(CONTROL_TASK_TAG, "Inject only water line: OFF");
 
     xTaskNotify(boilerTaskH, 0x08, eSetBits);
 
@@ -2005,7 +1730,7 @@ static void injectOnlyWaterLineManual(uint8_t *dataBytes){
     uint32_t ulNotifiedValue = 0;
     bool onWait = true;
 
-    ESP_LOGI(CONTROL_TASK_TAG, "Inject only water line: ON");
+    //ESP_LOGI(CONTROL_TASK_TAG, "Inject only water line: ON");
 
     xTaskNotify(boilerTaskH, 0x20, eSetBits);
 
@@ -2025,12 +1750,12 @@ static void injectOnlyWaterLineManual(uint8_t *dataBytes){
 
         if((ulNotifiedValue & 0x08) >> 3){
             onWait = false;
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
+            //ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
         }
         
         if(checkWaterBtnFromUi()){
             onWait = false;
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
+            //ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
         }
         
 
@@ -2045,82 +1770,22 @@ static void injectOnlyWaterLineManual(uint8_t *dataBytes){
     resetRelay(dataBytes, SOLENOID_VALVE_1);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
-    ESP_LOGE(CONTROL_TASK_TAG, "Inject only water line: OFF");
+    //ESP_LOGE(CONTROL_TASK_TAG, "Inject only water line: OFF");
 
     xTaskNotify(boilerTaskH, 0x08, eSetBits);
 }
 
-/*
-static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, ContsPowderData *contsPowData){
-
-    uint32_t ulNotifiedValue = 0;
-    bool onWait = true;
-    int targetGrams = 40;
-    double refTime = 0;
-
-    double totalTime = contsPowData->timePerPulse * pulses;
-
-    ESP_LOGI(CONTROL_TASK_TAG, "Inject powder water: ON - %lf", totalTime);
-
-    setRelay(dataBytes, SOLENOID_VALVE_2);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    vTaskDelay(pdMS_TO_TICKS(700)); //700
-
-    setRelay(dataBytes, DOSER_DEVICE_1);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-    
+static void doBoilerPulse(uint8_t *dataBytes){
     setRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
-    refTime = esp_timer_get_time();
-
-    vTaskDelay(pdMS_TO_TICKS(700));
-
-    setRelay(dataBytes, WHIPPER);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-
-    //vTaskDelay(pdMS_TO_TICKS(22000));
-    xQueueSend(xQueueInputPulse, (void *) &pulses, portMAX_DELAY);
-
-    do{
-        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
-
-        if((ulNotifiedValue & 0x08) >> 3){
-            onWait = false;
-
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP - %lf", (esp_timer_get_time() - refTime));
-        }
-
-    }while(onWait);
-
+    vTaskDelay(pdMS_TO_TICKS(1200));
 
     resetRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
-    vTaskDelay(pdMS_TO_TICKS(700));
-
-    resetRelay(dataBytes, DOSER_DEVICE_1);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    ESP_LOGI(CONTROL_TASK_TAG, "EXTRA TIME - %lf", (esp_timer_get_time() - refTime));
-
-    vTaskDelay(pdMS_TO_TICKS(700));
-
-    resetRelay(dataBytes, SOLENOID_VALVE_2);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    resetRelay(dataBytes, WHIPPER);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
-
-    ESP_LOGE(CONTROL_TASK_TAG, "Inject powder water: OFF");
-
-
+    vTaskDelay(pdMS_TO_TICKS(1200));
 }
-*/
 
 
 static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop){
@@ -2173,7 +1838,8 @@ static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop){
 
     if(runProcess){
         if(noCoffee){
-            ESP_LOGE(CONTROL_TASK_TAG, "ERROR: NO COFFEE!!!");
+            //ESP_LOGE(CONTROL_TASK_TAG, "ERROR: NO COFFEE!!!");
+            xTaskNotify(uiTaskH, 0x004, eSetBits);
             runProcess = false;
         }
         else{
@@ -2185,11 +1851,45 @@ static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop){
             resetRelay(dataBytes, COFFEE_RELEASE_MAGNET);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
 
-            ESP_LOGI(CONTROL_TASK_TAG, "Coffee released :)");
+            //ESP_LOGI(CONTROL_TASK_TAG, "Coffee released :)");
         }
     }
 
     return runProcess;
+
+}
+
+static void add2Counter(const uint8_t repIndex){
+
+    if(recipeList[repIndex].moduleSize > 0){
+
+        char *namespaceName = (char *)malloc(10);
+        strcpy(namespaceName, "recipe0");
+
+        if(repIndex < 9)
+            namespaceName[6] = (char)(repIndex + 49);
+        else{
+            namespaceName[6] = '1';
+            namespaceName[7] = (char)(repIndex + 39);
+            namespaceName[8] = '\0';
+        }
+
+        nvs_handle_t nvsHandle;
+
+        recipeList[repIndex].recipeCounter++;
+
+
+        if(nvs_open(namespaceName, NVS_READWRITE, &nvsHandle) == ESP_OK){
+            if(nvs_set_u16(nvsHandle, "counter", recipeList[repIndex].recipeCounter) == ESP_OK)
+                nvs_commit(nvsHandle);
+
+            nvs_close(nvsHandle);
+        }
+
+
+
+        free(namespaceName);
+    }
 
 }
 
@@ -2199,7 +1899,7 @@ static void cleanMachine(uint8_t *dataBytes){
     uint16_t pulses = 142;
     uint32_t ulNotifiedValue = 0;
 
-    ESP_LOGE(CONTROL_TASK_TAG, "Clean machine: ON");
+    //ESP_LOGE(CONTROL_TASK_TAG, "Clean machine: ON");
 
     setBrewer2InjectPosition(dataBytes);
 
@@ -2239,7 +1939,7 @@ static void cleanMachine(uint8_t *dataBytes){
         if((ulNotifiedValue & 0x08) >> 3){
             onWait = false;
 
-            ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
+            //ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP");
         }
 
     }while(onWait);
@@ -2257,7 +1957,7 @@ static void cleanMachine(uint8_t *dataBytes){
     resetRelay(dataBytes, WHIPPER);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
 
-    ESP_LOGE(CONTROL_TASK_TAG, "Clean machine: OFF");
+    //ESP_LOGE(CONTROL_TASK_TAG, "Clean machine: OFF");
 
     xTaskNotify(boilerTaskH, 0x08, eSetBits);
 
@@ -2310,7 +2010,7 @@ void calculatePulseTime(uint8_t *dataBytes){
 
                 if(xQueueReceive(xQueueInputTimePerPulse, (void *) &pulseTimeArray[i-1], pdMS_TO_TICKS(10)) == pdPASS){
                     onWait = false;
-                    ESP_LOGI(CONTROL_TASK_TAG, "pulseTime -> %lf", pulseTimeArray[i-1]);
+                    //ESP_LOGI(CONTROL_TASK_TAG, "pulseTime -> %lf", pulseTimeArray[i-1]);
                 }
 
             }while(onWait);
@@ -2328,11 +2028,11 @@ void calculatePulseTime(uint8_t *dataBytes){
 
     totalTime /= 3;
 
-    ESP_LOGW(CONTROL_TASK_TAG, "times: %lf - %lf - %lf = %lf", 
-                pulseTimeArray[0], pulseTimeArray[1], pulseTimeArray[2], totalTime);
+    //ESP_LOGW(CONTROL_TASK_TAG, "times: %lf - %lf - %lf = %lf", 
+      //          pulseTimeArray[0], pulseTimeArray[1], pulseTimeArray[2], totalTime);
 
 
-    ESP_LOGE(CONTROL_TASK_TAG, "Pulse time test: OFF");
+    //ESP_LOGE(CONTROL_TASK_TAG, "Pulse time test: OFF");
 
 
 }
@@ -2392,7 +2092,7 @@ static bool checkWaterBtnFromUi(){
 
     if(xQueueReceive(xQueueInputBtns, &tempInputBtnStruct, pdMS_TO_TICKS(10)) == pdPASS){
 
-        if(tempInputBtnStruct.btn7)
+        if(tempInputBtnStruct.btn6)
             temp = true;
     }
 
@@ -2407,7 +2107,7 @@ static bool checkStopBtnFromUi(){
 
     if(xQueueReceive(xQueueInputBtns, &tempInputBtnStruct, pdMS_TO_TICKS(10)) == pdPASS){
 
-        if(tempInputBtnStruct.btn6)
+        if(tempInputBtnStruct.btn7)
             temp = true;
     }
 
@@ -2415,11 +2115,23 @@ static bool checkStopBtnFromUi(){
 
 }
 
+
+static void clearInputBtnQueue(){
+    InputBtnStruct tempInputBtnStruct;
+
+    if(xQueueReceive(xQueueInputBtns, &tempInputBtnStruct, pdMS_TO_TICKS(10)) == pdPASS){
+
+    }
+
+}
+
+
 static void checkQueuesFromUi(ControlData *controlData){
 
     InputBtnStruct tempInputBtnStruct;
 
     if(xQueueReceive(xQueueInputBtns, &tempInputBtnStruct, pdMS_TO_TICKS(10)) == pdPASS){
+
 
         if(controlData->controlState == IDLE_C){
 
@@ -2477,10 +2189,15 @@ static void checkQueuesFromUi(ControlData *controlData){
             else if(tempInputBtnStruct.btn7){
                 controlData->controlState = SWAP_PAGE_C;
             }
-            else if(tempInputBtnStruct.btnA)
-                controlData->controlState = CLEAN_C;
+            else if(tempInputBtnStruct.btnA){
+                controlData->controlState = MENU_C;
+                xTaskNotify(uiTaskH, 0x200, eSetBits);                 
+            }
+                /*
             else if(tempInputBtnStruct.btnB)
                 controlData->controlState = MAINTENANCE_C;
+                */
+                
             
             /*
             ESP_LOGE(CONTROL_TASK_TAG, "-> %d %d %d %d %d %d %d %d %d %d",
@@ -2489,6 +2206,22 @@ static void checkQueuesFromUi(ControlData *controlData){
                 tempInputBtnStruct.btn6, tempInputBtnStruct.btn7, tempInputBtnStruct.btnA, 
                 tempInputBtnStruct.btnB);
                 */
+        }
+        else if(controlData->controlState == MENU_C){
+            if(tempInputBtnStruct.btn0){
+                controlData->controlState = ENABLE_BLUE_C;
+                xTaskNotify(uiTaskH, 0x040, eSetBits);
+            }
+            else if(tempInputBtnStruct.btn4){
+                controlData->controlState = CLEAN_C;
+                xTaskNotify(uiTaskH, 0x080, eSetBits);
+            }
+            else if(tempInputBtnStruct.btn7){
+                controlData->controlState = IDLE_C;
+                xTaskNotify(uiTaskH, 0x010, eSetBits);            
+            }
+            
+
         }
         
 
@@ -2761,14 +2494,6 @@ static void checkOnlyRecipeMemContent(const Recipe *recipeData){
 
 
 static void checkMemContent(const Recipe *recipeData, const SystemData *sysData, PowderGramsRefData *powderData){
-    /*
-    int aSize = sizeof(Recipe);
-
-    for(size_t i = 0; i < 13; i++)
-        ESP_LOGI(CONTROL_TASK_TAG, "-> %s ", recipeData[i].recipeName);
-
-    ESP_LOGI(CONTROL_TASK_TAG, "--> %d - %d - %lu", sysData->boilerTemperature, sysData->password, sysData->mainCounter);
-    */
 
    for(size_t i = 0; i < 13; i++){
 
@@ -2787,22 +2512,6 @@ static void checkMemContent(const Recipe *recipeData, const SystemData *sysData,
         
    }
 
-
-    /*
-    ESP_LOGI(CONTROL_TASK_TAG, "0 = %s - %d - %d + %d", 
-        recipeData[0].recipeName, recipeData[0].modulesArray[0].moduleType, recipeData[0].modulesArray[0].pulses,
-        recipeData[0].moduleSize);
-
-    ESP_LOGI(CONTROL_TASK_TAG, "1 = %s - %d - %d | %d - %d + %d", 
-        recipeData[1].recipeName, recipeData[1].modulesArray[0].moduleType, recipeData[1].modulesArray[0].pulses,
-        recipeData[1].modulesArray[1].moduleType, recipeData[1].modulesArray[1].pulses,
-        recipeData[1].moduleSize);            
-
-    ESP_LOGI(CONTROL_TASK_TAG, "2 = %s - %d - %d - %d + %d", 
-        recipeData[2].recipeName, recipeData[2].modulesArray[0].moduleType, recipeData[2].modulesArray[0].pulses,
-        recipeData[2].modulesArray[0].gr, recipeData[2].moduleSize);
-
-        */
 
     ESP_LOGI(CONTROL_TASK_TAG, "pow = %d - %d - %d", powderData->refGrPowA, powderData->refGrPowB, powderData->refGrPowC);
 }
@@ -2914,16 +2623,6 @@ static void loadFakeMemContent(Recipe *recipeData, SystemData *sysData, PowderGr
 }
 
 
-static void btSubTask(bool *btEnabled){
-  
-    if(!(*btEnabled)){
-        *btEnabled = true;
-
-        initBLUE();
-    }
-
-}
-
 
 void initI2C_MCP23017_Out(){
 
@@ -3012,6 +2711,13 @@ static void controlTask(void *pvParameters){
 
     syncroState = IDLE_SYNC_C;    
     bool btEnabled = false;
+
+    float rtTemperature = 0;
+
+    double refTimeIdle = 0;
+    double cTimeIdle = 0;
+    uint8_t idleBoilerPulse = 0;
+
     ControlData controlData = {IDLE_C, 0, PAGE_1};
     //ContsPowderData conPowderData = {1.8333f, 1.8333f, 1.8333f, 80737.37};
     PowderGramsRefData powderGramsRefData = {0, 0, 0};
@@ -3039,15 +2745,10 @@ static void controlTask(void *pvParameters){
     powderGramsRefData.refGrPowB = 15;
     powderGramsRefData.refGrPowC = 15;
 
-    //systemData.boilerTemperature = 89;
 
     xQueueSend(xQueueData2Boiler, (void *) &systemData.boilerTemperature, (TickType_t) 10);
 
-    //loadFakeMemContent(recipeList, &systemData, &powderGramsRefData);
-
     checkMemContent(recipeList, &systemData, &powderGramsRefData);
-    //checkOnlyRecipeMemContent(recipeList);
-
 
     checkAirBreak(outputIO_Buff);
 
@@ -3065,8 +2766,9 @@ static void controlTask(void *pvParameters){
 
     xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
 
-    ESP_LOGI(CONTROL_TASK_TAG, "ONLINE");                                      
+    ESP_LOGI(CONTROL_TASK_TAG, "ONLINE");      
 
+    refTimeIdle = esp_timer_get_time();
 
     while(true){
 
@@ -3074,60 +2776,83 @@ static void controlTask(void *pvParameters){
 
         switch(controlData.controlState){
             case IDLE_C:
+            case MENU_C:
 
             break;
-            case MAINTENANCE_C:
+            case ENABLE_BLUE_C:
                 if(!btEnabled){
                     btEnabled = true;
-
-                    ESP_LOGI(CONTROL_TASK_TAG, "Blue enabled!!!");
+                    //ESP_LOGI(CONTROL_TASK_TAG, "Blue enabled!!!");
 
                     initBLUE();
                 }
 
                 controlData.controlState = IDLE_C;
+
+                vTaskDelay(pdMS_TO_TICKS(1000));
+
             break;
             case CLEAN_C:
-                /*
-                if(!btEnabled){
-                    btEnabled = true;
-
-                    ESP_LOGI(CONTROL_TASK_TAG, "Blue enabled!!!");
-
-                    initBLUE();
-                }
-                */
-                
-                xTaskNotify(uiTaskH, 0x40, eSetBits);                   //Set ui task to cleaning state
-
                 cleanMachine(outputIO_Buff);
 
                 xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
-                
 
                 controlData.controlState = IDLE_C;
             break;
             case DRINK_C:
-                strcpy(uiDataControl.strData, recipeList[controlData.recipeIndex].recipeName);
-                xQueueSend(xQueueUI, (void *) &uiDataControl, (TickType_t) 10);
 
-                xTaskNotify(uiTaskH, 0x100, eSetBits);                   //Set ui task to preparing drink state
+                xQueuePeek(xQueueBoilerTemp, &rtTemperature, pdMS_TO_TICKS(60));
 
-                runDrink(&recipeList[controlData.recipeIndex], outputIO_Buff, &powderGramsRefData);
+                if(rtTemperature > (systemData.boilerTemperature - 3)){
+                    cTimeIdle = esp_timer_get_time() - refTimeIdle;
 
-                xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
+                    if(cTimeIdle >= 600000000){
+                        idleBoilerPulse = 1;                        
+                        ESP_LOGW(CONTROL_TASK_TAG, "boiler pulse water");
+                    }
+
+                    strcpy(uiDataControl.strData, recipeList[controlData.recipeIndex].recipeName);
+                    xQueueSend(xQueueUI, (void *) &uiDataControl, (TickType_t) 10);
+
+                    xTaskNotify(uiTaskH, 0x100, eSetBits);                   //Set ui task to preparing drink state
+
+                    if(runDrink(&recipeList[controlData.recipeIndex], outputIO_Buff, &powderGramsRefData, &idleBoilerPulse))
+                        add2Counter(controlData.recipeIndex);
+
+                    xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
+
+                    refTimeIdle = esp_timer_get_time();
+                
+                }
+                else
+                    xTaskNotify(uiTaskH, 0x400, eSetBits);
+
                 
                 controlData.controlState = IDLE_C;
             break;
             case WATER_C:
-                strcpy(uiDataControl.strData, " Water");
-                xQueueSend(xQueueUI, (void *) &uiDataControl, (TickType_t) 10);
 
-                xTaskNotify(uiTaskH, 0x100, eSetBits);                   //Set ui task to preparing drink state
+                xQueuePeek(xQueueBoilerTemp, &rtTemperature, pdMS_TO_TICKS(60));
 
-                injectOnlyWaterLineManual(outputIO_Buff);
+                if(rtTemperature > (systemData.boilerTemperature - 3)){
 
-                xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
+                    strcpy(uiDataControl.strData, " Water");
+                    xQueueSend(xQueueUI, (void *) &uiDataControl, (TickType_t) 10);
+
+                    xTaskNotify(uiTaskH, 0x100, eSetBits);                   //Set ui task to preparing drink state
+
+                    injectOnlyWaterLineManual(outputIO_Buff);
+
+                    xTaskNotify(uiTaskH, 0x10, eSetBits);                   //Set ui task to idle
+
+                    vTaskDelay(pdMS_TO_TICKS(3000));
+
+                    clearInputBtnQueue();
+
+                    refTimeIdle = esp_timer_get_time();
+                }
+                else
+                    xTaskNotify(uiTaskH, 0x400, eSetBits);
 
                 controlData.controlState = IDLE_C;
             break;

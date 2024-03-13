@@ -109,32 +109,32 @@ static void checkNotifications4Boiler(BoilerState *bState){
 
     if(xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, pdMS_TO_TICKS(15))){
         if(ulNotifiedValue & 0x001){
-            ESP_LOGW(UI_TASK_TAG, "Boiler Ready NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "Boiler Ready NOTIFICATION");
             
         }
 
         if((ulNotifiedValue & 0x002) >> 1){
-            ESP_LOGW(UI_TASK_TAG, "Turn Boiler Off NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "Turn Boiler Off NOTIFICATION");
 
         }
 
         if((ulNotifiedValue & 0x004) >> 2){
-            ESP_LOGW(UI_TASK_TAG, "Turn Boiler On NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "Turn Boiler On NOTIFICATION");
 
         }
 
         if((ulNotifiedValue & 0x008) >> 3){
-            ESP_LOGW(UI_TASK_TAG, "Set Boiler IDLE Mode NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "Set Boiler IDLE Mode NOTIFICATION");
             *bState = HOT_2_IDLE_B;
         }
 
         if((ulNotifiedValue & 0x010) >> 4){
-            ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT Mode NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT Mode NOTIFICATION");
             *bState = IDLE_2_HOT_B;
         }
 
         if((ulNotifiedValue & 0x020) >> 5){
-            ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT MAX Mode NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT MAX Mode NOTIFICATION");
             *bState = IDLE_2_HOT_MAX_B;
         }
     }

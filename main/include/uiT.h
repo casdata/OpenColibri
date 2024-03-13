@@ -11,8 +11,11 @@
 typedef enum{
     IDLE_UI = 0,
     BOOTING_UI,
-    MAINTENANCE_UI,
+    BLUETOOTH_UI,
     CLEAN_UI,
+    PRE_MENU_UI,
+    MENU_UI,
+    WAIT_UI,
     PRE_PREPARE_DRINK_UI,
     PREPARE_DRINK_UI,
     ERROR_UI
@@ -21,6 +24,7 @@ typedef enum{
 typedef struct UiUpdateStruct{
     bool updateTemp;
     bool updateDataStr;
+    bool updatePage;
 } UiUpdate;
 
 

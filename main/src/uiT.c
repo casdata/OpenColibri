@@ -392,7 +392,7 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
     if(xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, pdMS_TO_TICKS(15) == pdPASS)){
 
         if(ulNotifiedValue & 0x001){
-            ESP_LOGW(UI_TASK_TAG, "Clear Error Notification");
+            //ESP_LOGW(UI_TASK_TAG, "Clear Error Notification");
             
             
             if(*previousUiState == BOOTING_UI){
@@ -407,7 +407,7 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
         }
 
         if((ulNotifiedValue & 0x002) >> 1){
-            ESP_LOGE(UI_TASK_TAG, "AIR BREAK ERROR NOTIFICATION");
+            //ESP_LOGE(UI_TASK_TAG, "AIR BREAK ERROR NOTIFICATION");
 
             *previousUiState = *currentUiState;
             *currentUiState = ERROR_UI;
@@ -418,7 +418,7 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
         }
 
         if((ulNotifiedValue & 0x004) >> 2){
-            ESP_LOGE(UI_TASK_TAG, "COFFEE ERROR NOTIFICATION");
+            //ESP_LOGE(UI_TASK_TAG, "COFFEE ERROR NOTIFICATION");
 
             *previousUiState = *currentUiState;
             *currentUiState = ERROR_UI;
@@ -429,7 +429,7 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
         }
 
         if((ulNotifiedValue & 0x008) >> 3){
-            ESP_LOGE(UI_TASK_TAG, "BREWER ERROR NOTIFICATION");
+            //ESP_LOGE(UI_TASK_TAG, "BREWER ERROR NOTIFICATION");
 
             *previousUiState = *currentUiState;
             *currentUiState = ERROR_UI;
@@ -440,38 +440,54 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
         }
 
         if((ulNotifiedValue & 0x010) >> 4){
-            ESP_LOGW(UI_TASK_TAG, "idleState NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "idleState NOTIFICATION");
 
             *previousUiState = *currentUiState;
             *currentUiState = IDLE_UI;
         }
 
         if((ulNotifiedValue & 0x020) >> 5){
-            ESP_LOGW(UI_TASK_TAG, "bootingState NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "bootingState NOTIFICATION");
 
             *previousUiState = *currentUiState;
             *currentUiState = BOOTING_UI;
         }
 
         if((ulNotifiedValue & 0x040) >> 6){
-            ESP_LOGW(UI_TASK_TAG, "maintenanceState NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "bluetoothState NOTIFICATION");
 
             *previousUiState = *currentUiState;
-            *currentUiState = MAINTENANCE_UI;
+            *currentUiState = BLUETOOTH_UI;
         }
 
         if((ulNotifiedValue & 0x080) >> 7){
-            ESP_LOGW(UI_TASK_TAG, "cleanState NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "cleanState NOTIFICATION");
 
             *previousUiState = *currentUiState;
             *currentUiState = CLEAN_UI;
         }
 
         if((ulNotifiedValue & 0x100) >> 8){
-            ESP_LOGW(UI_TASK_TAG, "prepareDrinkState NOTIFICATION");
+            //ESP_LOGW(UI_TASK_TAG, "prepareDrinkState NOTIFICATION");
 
             *previousUiState = *currentUiState;
             *currentUiState = PRE_PREPARE_DRINK_UI;
+
+        }
+
+        if((ulNotifiedValue & 0x200) >> 9){
+            ESP_LOGW(UI_TASK_TAG, "menuState NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = PRE_MENU_UI;
+
+        }
+
+        if((ulNotifiedValue & 0x400) >> 10){
+            //ESP_LOGW(UI_TASK_TAG, "waitState NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = WAIT_UI;
 
         }
         
@@ -486,10 +502,11 @@ static void checkQueue4Ui(UiData *myUiData, UiUpdate *myUiUpdate){
 
     if(xQueueReceive(xQueueUI, &tempUiData, pdMS_TO_TICKS(10)) == pdPASS){
 
-        if(myUiData->page != tempUiData.page)
+        if(myUiData->page != tempUiData.page){
             myUiData->page = tempUiData.page;
+            myUiUpdate->updatePage = true;
+        }
         
-
         if(strcmp(myUiData->strData, tempUiData.strData) != 0){
             strcpy(myUiData->strData, tempUiData.strData);
             myUiUpdate->updateDataStr = true;
@@ -665,7 +682,7 @@ static void uiTask(void *pvParameters){
     //double refTimeUi, cTimeUi;
 
     initLcd();
-    write2LCD("OpenColibri V008", 16, 0);
+    write2LCD("OpenColibri V009", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
@@ -682,8 +699,9 @@ static void uiTask(void *pvParameters){
 
         switch(currentUiState){
             case IDLE_UI:
-                if(previousUiState != IDLE_UI){
+                if(previousUiState != IDLE_UI || uiUpdate.updatePage){
                     previousUiState = currentUiState;
+                    uiUpdate.updatePage = false;
 
                     fullClearLcdScreen(); 
                     if(uiData.page == PAGE_1)
@@ -703,13 +721,42 @@ static void uiTask(void *pvParameters){
 
                 inBootingCodeState(&uiData);
             break;
-            case MAINTENANCE_UI:
-                if(previousUiState != MAINTENANCE_UI){
+            case BLUETOOTH_UI:
+                if(previousUiState != BLUETOOTH_UI){
                     previousUiState = currentUiState;
 
                     fullClearLcdScreen();
-                    write2LCD("Maintanance", 11, 1);
+                    write2LCD("Bluetooth ON", 12, 1);
                 }
+
+                currentUiState = IDLE_UI;
+
+                vTaskDelay(pdMS_TO_TICKS(3000));
+
+            break;
+            case WAIT_UI:
+                if(previousUiState != WAIT_UI){
+                    previousUiState = currentUiState;
+
+                    fullClearLcdScreen();
+                    write2LCD("HEATING WATER!!", 12, 1);
+                }
+
+                currentUiState = IDLE_UI;
+
+                vTaskDelay(pdMS_TO_TICKS(2000));
+            break;
+            case PRE_MENU_UI:
+                fullClearLcdScreen();
+                write2LCD("MAINTENANCE", 11, 1);
+
+                currentUiState = MENU_UI;
+            break;
+            case MENU_UI:
+                if(previousUiState != MENU_UI){
+                    previousUiState = currentUiState;
+                }
+
             break;
             case CLEAN_UI:
                 if(previousUiState != CLEAN_UI){
@@ -732,37 +779,6 @@ static void uiTask(void *pvParameters){
 
                 showPreparingDrinkName(&uiData);
                 
-                /*
-                if(previousUiState != PREPARE_DRINK_UI && uiUpdate.updateDataStr){
-                    previousUiState = currentUiState;
-                    uiUpdate.updateDataStr = false;
-
-                    fullClearLcdScreen();
-                    write2LCD(uiData.strData, strlen(uiData.strData), 0);
-                    */
-
-                    /*
-                    if(uiUpdate.updateDataStr){
-                        uiUpdate.updateDataStr = false;
-
-                        fullClearLcdScreen();
-                        write2LCD(uiData.strData, strlen(uiData.strData), 0);
-
-                        refTimeUi = esp_timer_get_time();
-                    }
-                    else{
-                        cTime = esp_timer_get_time() - refTime;
-            
-                        if( cTime >= 15000000){      //15 seg
-                            previousUiState = currentUiState;
-
-                            fullClearLcdScreen();
-                            write2LCD("Preparing drink", 15, 0);
-
-                        }
-                    }
-                    */
-                //}
             break;
             case ERROR_UI:
                 inErrorCodeState(errorCode);
