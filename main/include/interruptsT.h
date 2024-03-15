@@ -11,6 +11,7 @@ typedef struct WaterFlowStruct{
 } WaterFlowData;
 
 typedef struct PulseTestStruct{
+    bool    manualReset;
     bool    state;
     double  refTime;
     double  pulseTime;

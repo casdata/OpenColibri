@@ -46,6 +46,10 @@ static void check4Notifications(WaterFlowData *wFlowData, PulseTestData *pulseDa
             pulseData->state = true;
             ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: calculate pulse time");
         }
+        else if((ulNotifiedValue & 0x04) >> 2){
+            pulseData->manualReset = true;
+            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: prepare 4 manual");
+        }
         
     }
 }
@@ -124,6 +128,11 @@ static void interruptsTask(void *pvParameters){
 
         check4Notifications(&waterFlowData, &pulseTestData);
 
+        if(pulseTestData.manualReset){
+            pulseTestData.manualReset = false;
+            checkingCount = false;
+        }
+
         if(!checkingCount){
             checkingCount = check4PulseCount(&count, &targetCount);
             if(checkingCount && pulseTestData.state)
@@ -161,8 +170,10 @@ static void interruptsTask(void *pvParameters){
 
                         checkingCount = false;
 
-                        //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d -%d", count, targetCount);
+                        //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d - %d", count, targetCount);
                     }
+
+                    //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d - %d", count, targetCount);
 
                 break;
                 case MCP23017_INTB_PIN:

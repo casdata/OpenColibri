@@ -16,6 +16,7 @@ typedef enum{
     PRE_MENU_UI,
     MENU_UI,
     WAIT_UI,
+    DATA_UPDATE_UI,
     PRE_PREPARE_DRINK_UI,
     PREPARE_DRINK_UI,
     ERROR_UI

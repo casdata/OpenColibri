@@ -490,6 +490,14 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
             *currentUiState = WAIT_UI;
 
         }
+
+        if((ulNotifiedValue & 0x800) >> 11){
+            //ESP_LOGW(UI_TASK_TAG, "waitState NOTIFICATION");
+
+            *previousUiState = *currentUiState;
+            *currentUiState = DATA_UPDATE_UI;
+
+        }
         
 
     }
@@ -682,7 +690,7 @@ static void uiTask(void *pvParameters){
     //double refTimeUi, cTimeUi;
 
     initLcd();
-    write2LCD("OpenColibri V009", 16, 0);
+    write2LCD("OpenColibri V011", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
@@ -700,6 +708,11 @@ static void uiTask(void *pvParameters){
         switch(currentUiState){
             case IDLE_UI:
                 if(previousUiState != IDLE_UI || uiUpdate.updatePage){
+
+                    if(previousUiState == PREPARE_DRINK_UI)
+                        strcpy(uiData.strData, "_");
+
+
                     previousUiState = currentUiState;
                     uiUpdate.updatePage = false;
 
@@ -746,6 +759,18 @@ static void uiTask(void *pvParameters){
 
                 vTaskDelay(pdMS_TO_TICKS(2000));
             break;
+            case DATA_UPDATE_UI:
+                if(previousUiState != DATA_UPDATE_UI){
+                    previousUiState = currentUiState;
+
+                    fullClearLcdScreen();
+                    write2LCD("DATA UPDATED!", 13, 1);
+                }
+
+                currentUiState = IDLE_UI;
+
+                vTaskDelay(pdMS_TO_TICKS(2000));
+            break;
             case PRE_MENU_UI:
                 fullClearLcdScreen();
                 write2LCD("MAINTENANCE", 11, 1);
@@ -776,9 +801,7 @@ static void uiTask(void *pvParameters){
 
             break;
             case PREPARE_DRINK_UI:
-
                 showPreparingDrinkName(&uiData);
-                
             break;
             case ERROR_UI:
                 inErrorCodeState(errorCode);
