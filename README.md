@@ -3,6 +3,8 @@ Control board for the Necta Colibri vending machine + firmware
 
 The OpenColibri project is an alternative solution for the Colibri - Necta coffee machines with a damaged main board, enabling all the features except for the stirrer dispensing unit and the cup dispenser unit.
 
+The board features an ESP32 MCU, programmed over ESP-IDF. 
+
 There are 13 available recipe slots to program and choose from. The button #8 works as a page changer, when pressed the current page changes, giving access to the rest of the recipe slots. In total, there are 2 pages, seven recipes are available on the first page and six on the second page, in this last one, push button #7 works as a manual hot water outlet switch, pressing it will toggle the hot water outlet.
 
 Button #8 cancels the selected recipe preparation only while the grinder is working, after this, the preparation can’t be canceled.
