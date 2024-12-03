@@ -18,7 +18,7 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, WaterFlowDa
 
         wFlowData->state = false;
         if(wFlowData->alarm){
-            wFlowData->alarm = false;
+            //wFlowData->alarm = false;
             xTaskNotify(uiTaskH, 0x01, eSetBits);
         }
 
