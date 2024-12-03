@@ -394,14 +394,13 @@ static void checkNotifications4Ui(UiState *previousUiState, UiState *currentUiSt
         if(ulNotifiedValue & 0x001){
             //ESP_LOGW(UI_TASK_TAG, "Clear Error Notification");
             
-            
-            if(*previousUiState == BOOTING_UI){
-                *previousUiState = ERROR_UI;
+            if(*previousUiState == BOOTING_UI)
                 *currentUiState = BOOTING_UI; 
+            else
+                *currentUiState = IDLE_UI;
 
-                fullClearLcdScreen();
-            }
-        
+            *previousUiState = ERROR_UI; 
+            fullClearLcdScreen();
 
             *errorCode = NONE;
         }
@@ -690,7 +689,7 @@ static void uiTask(void *pvParameters){
     //double refTimeUi, cTimeUi;
 
     initLcd();
-    write2LCD("OpenColibri V011", 16, 0);
+    write2LCD("OpenColibri V012", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
