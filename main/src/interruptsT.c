@@ -3,8 +3,10 @@
 TaskHandle_t intTaskH = NULL;
 
 
-static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, WaterFlowData *wFlowData){
+static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oBuff, WaterFlowData *wFlowData){
     readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, iBuff, 1);
+
+    inputStruct->previousAirBreakSw = inputStruct->airBreakSw;
 
     inputStruct->wasteOverflowSw  = readSW(iBuff, WASTE_OVERFLOW_SW);
     inputStruct->coffeeBrewerSw = readSW(iBuff, COFFEE_BREWER_SW);
@@ -13,17 +15,38 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, WaterFlowDa
     inputStruct->cupReleaseSw = readSW(iBuff, CUP_RELEASE_SW);
     inputStruct->cupSensorSw = readSW(iBuff, CUP_SENSOR_SW);
 
-    if(wFlowData->state && !inputStruct->airBreakSw){
-        xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
 
-        wFlowData->state = false;
-        if(wFlowData->alarm){
-            //wFlowData->alarm = false;
-            xTaskNotify(uiTaskH, 0x01, eSetBits);
+    if(wFlowData->waterFill){
+
+        if(!inputStruct->airBreakSw){
+            xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
+
+            vTaskDelay(pdMS_TO_TICKS(50));
         }
 
         //ESP_LOGI(INTERRUPTS_TASK_TAG, "send noti close w_inlet");
     }
+
+
+    if(inputStruct->airBreakSw && !inputStruct->previousAirBreakSw){
+        wFlowData->state = true;
+        wFlowData->waterFill = false;
+
+        wFlowData->refTime = esp_timer_get_time();
+
+    }
+
+//    if(wFlowData->state && !inputStruct->airBreakSw){
+//        xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
+//
+//        wFlowData->state = false;
+//        if(wFlowData->alarm){
+//            //wFlowData->alarm = false;
+//            xTaskNotify(uiTaskH, 0x01, eSetBits);
+//        }
+//
+//        //ESP_LOGI(INTERRUPTS_TASK_TAG, "send noti close w_inlet");
+//    }
 
     //ESP_LOGE(INTERRUPTS_TASK_TAG, "wOver: %d brewer: %d air: %d releC: %d ", inputStruct->wasteOverflowSw , 
         //inputStruct->coffeeBrewerSw, inputStruct->airBreakSw, inputStruct->coffeeReleaseSw);
@@ -36,11 +59,14 @@ static void check4Notifications(WaterFlowData *wFlowData, PulseTestData *pulseDa
 
     if(xTaskNotifyWait(0xFF, 0, &ulNotifiedValue, pdMS_TO_TICKS(10)) == pdPASS){
         
-        if((ulNotifiedValue & 0x01)){
-            wFlowData->state = true;
-            wFlowData->alarm = false;
-            wFlowData->refTime = esp_timer_get_time();
-            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: control water flow");
+        if((ulNotifiedValue & 0x01)){                                                               //here
+            wFlowData->state = false;
+            wFlowData->waterFill = false;
+
+            if(wFlowData->alarm){
+                wFlowData->alarm = false;
+                xTaskNotify(uiTaskH, 0x01, eSetBits);
+            }
         }
         else if((ulNotifiedValue & 0x02) >> 1){
             pulseData->state = true;
@@ -111,18 +137,21 @@ static void interruptsTask(void *pvParameters){
     bool checkingCount = false;
 
     uint8_t *inputIO_Buff;
+    uint8_t *outputIO_Buff = (uint8_t *)malloc(2);
 
-    InputSwStruct inputSwStruct = {false, false, false, false, false, false};
-    WaterFlowData waterFlowData = {false, false, 0.0f};
+    InputSwStruct inputSwStruct = {false, false, false, false,
+                                   false, false, false, 0};
+    WaterFlowData waterFlowData = {false, false, false, true, 0.0f};
     PulseTestData pulseTestData = {false, 0, 0};
 
     inputIO_Buff = (uint8_t *)malloc(1);
+    memset(outputIO_Buff, 0, 2);
 
     //xTaskNotify(controlTaskH, 0x02, eSetBits);              //Notify control task that is ready
     ESP_LOGI(INTERRUPTS_TASK_TAG, "ONLINE");
 
     //xQueueOverwrite(xQueueInputPulse, (void *) &count);
-    readInputSws(&inputSwStruct, inputIO_Buff, &waterFlowData);
+    readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData);
 
     while(1){
 
@@ -140,14 +169,22 @@ static void interruptsTask(void *pvParameters){
 
         }
 
-        if(waterFlowData.state && !waterFlowData.alarm){
-            
-            if((esp_timer_get_time() - waterFlowData.refTime) > 8000000){
+        if(waterFlowData.state){
+            double currentTime = esp_timer_get_time() - waterFlowData.refTime;
+
+            if(!waterFlowData.alarm && currentTime > 8000000){      //8 seg
                 waterFlowData.alarm = true;
-                xTaskNotify(uiTaskH, 0x02, eSetBits); 
+                xTaskNotify(uiTaskH, 0x02, eSetBits);
+            } else if (!waterFlowData.waterFill && currentTime > 2000000) {                     //2 seg
+                waterFlowData.waterFill = true;
+                here
+                //open valve
+
+
             }
         }
- 
+
+
         if(xQueueReceive(xQueueIntB, &pinNum, pdMS_TO_TICKS(10))){
 
             switch(pinNum){
@@ -178,7 +215,7 @@ static void interruptsTask(void *pvParameters){
                 break;
                 case MCP23017_INTB_PIN:
 
-                    readInputSws(&inputSwStruct, inputIO_Buff, &waterFlowData);
+                    readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData);
 
                 break;
             }

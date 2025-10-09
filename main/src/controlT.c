@@ -1319,7 +1319,7 @@ static void resetRelay(uint8_t *byteData, const OutputRelays outputRelays){
     }
 }
 
-static void checkAirBreak(uint8_t *dataBytes){
+static void checkAirBreak(uint8_t *dataBytes) {
 
     InputSwStruct inputSwStruct;    
 
@@ -1330,10 +1330,6 @@ static void checkAirBreak(uint8_t *dataBytes){
             setRelay(dataBytes, WATER_INLET_VALVE);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
             //ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
-
-            xTaskNotify(intTaskH, 0x01, eSetBits);                  //notify interrupt task for water flow control
-
-            vTaskDelay(pdMS_TO_TICKS(100)); 
 
             bool onWait = true;
             uint32_t ulNotifiedValue = 0;
@@ -1347,6 +1343,10 @@ static void checkAirBreak(uint8_t *dataBytes){
                     resetRelay(dataBytes, WATER_INLET_VALVE);
                     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
                     vTaskDelay(pdMS_TO_TICKS(30));
+
+                    xTaskNotify(intTaskH, 0x01, eSetBits);                  //notify interrupt task for water flow control
+
+                    vTaskDelay(pdMS_TO_TICKS(100));
 
                     //ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
 
@@ -2380,10 +2380,6 @@ void calculatePulseTime(uint8_t *dataBytes){
 
 }
 
-static void waitMachine2Start(uint8_t *dataBytes){
-    checkAirBreak(dataBytes);
-
-}
 
 static void startBoilerTask(){
     xTaskNotify(boilerTaskH, 0x04, eSetBits);         
