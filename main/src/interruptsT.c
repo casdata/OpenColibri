@@ -16,27 +16,10 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
     inputStruct->cupSensorSw = readSW(iBuff, CUP_SENSOR_SW);
 
 
-    if(wFlowData->waterFill){
-
-        if(!inputStruct->airBreakSw){
-            wFlowData->waterFill = false;
-            wFlowData->state = false;
-
-            xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
-
-            //close valve
-            readBytesMCP2307(MCP23017_INPUT_ADDR, 0x12, oBuff, 1);
-            vTaskDelay(pdMS_TO_TICKS(100));
-            cleanReadByte4WaterInlet(oBuff);
-
-            writeBytesMCP2307Int(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
-            vTaskDelay(pdMS_TO_TICKS(100));
-
-            if(wFlowData->alarm){
-                wFlowData->alarm = false;
-                xTaskNotify(uiTaskH, 0x01, eSetBits);
-            }
-
+        wFlowData->state = false;
+        if(wFlowData->alarm){
+            //wFlowData->alarm = false;
+            xTaskNotify(uiTaskH, 0x01, eSetBits);
         }
 
         //ESP_LOGI(INTERRUPTS_TASK_TAG, "send noti close w_inlet");
