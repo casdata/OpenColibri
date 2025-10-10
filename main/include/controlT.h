@@ -111,7 +111,6 @@ struct gatts_profile_inst {
 
 static bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *powderData, uint8_t *boilerPulse);
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
-static void readBytesMCP2307Cont(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
 static bool bitChangedInByte(uint8_t *byteData, const uint8_t bitPos, const bool newValue);
 static bool differentRelayState(uint8_t *byteData, const OutputRelays outputRelays, const bool newValue);
 static void setBit2Byte(uint8_t *byteData, const uint8_t bitPos);
