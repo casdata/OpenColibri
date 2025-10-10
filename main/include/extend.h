@@ -39,7 +39,7 @@
 #define UI_TASK_SIZE                2048
 #define UI_TASK_PRIORITY            4
 #define INTERRUPTS_TASK_SIZE        4096
-#define INTERRUPTS_TASK_PRIORITY    5
+#define INTERRUPTS_TASK_PRIORITY    6
 #define BOILER_TASK_SIZE            2048
 #define BOILER_TASK_PRIORITY        4
 
@@ -174,9 +174,11 @@ typedef struct InputBoolStruct{
     bool    wasteOverflowSw;
     bool    coffeeBrewerSw;
     bool    airBreakSw;
+    bool    previousAirBreakSw;
     bool    coffeeReleaseSw;
     bool    cupReleaseSw;
     bool    cupSensorSw;
+    double  airBreakRefTime;
 } InputSwStruct;
 
 typedef struct Input2BoolStruct{
