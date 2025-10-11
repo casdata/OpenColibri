@@ -1,4 +1,5 @@
 #include "controlT.h"
+#define FIXED
 
 
 TaskHandle_t controlTaskH = NULL;
@@ -1148,6 +1149,27 @@ bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
 
 }
 
+static void readBytesMCP2307Cont(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
+    i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
+
+    i2c_master_start(cmdHandle);
+    i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_WRITE, I2C_MASTER_ACK);
+    i2c_master_write_byte(cmdHandle, regAddr, I2C_MASTER_ACK);
+
+
+    i2c_master_start(cmdHandle);
+    i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_READ, I2C_MASTER_ACK);
+    for(size_t i = 0; i < numOfBytes; i++)
+        i2c_master_read_byte(cmdHandle, (dataBuff + i), I2C_MASTER_ACK);
+
+    i2c_master_stop(cmdHandle);
+
+
+    int cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmdHandle);
+
+}
+
 
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
     i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
@@ -1229,6 +1251,11 @@ static void setBit2Byte(uint8_t *byteData, const uint8_t bitPos){
 
 static void clearBit2Byte(uint8_t *byteData, const uint8_t bitPos){
     *byteData &= ~(1 << bitPos);
+}
+
+static void getByteOfPointer(uint8_t *byteData, uint8_t index){
+    for(uint8_t i = 0; i < 8; i++)
+        ESP_LOGI(CONTROL_TASK_TAG, "%d - %d: %d", index, i, (bool)( (*byteData >> (uint8_t)i) & 1));
 }
 
 static void setRelay(uint8_t *byteData, const OutputRelays outputRelays){
@@ -1319,50 +1346,78 @@ static void resetRelay(uint8_t *byteData, const OutputRelays outputRelays){
     }
 }
 
-static void checkAirBreak(uint8_t *dataBytes){
+static void checkAirBreak(uint8_t *dataBytes) {
 
-    InputSwStruct inputSwStruct;    
+    bool onWait = true;
+    uint32_t ulNotifiedValue = 0;
 
-    if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
+    do{
+        xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
 
-        if(inputSwStruct.airBreakSw){
+        if((ulNotifiedValue & 0x10) >> 4){
 
-            setRelay(dataBytes, WATER_INLET_VALVE);
-            writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
-            //ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
+            vTaskDelay(pdMS_TO_TICKS(100));
 
-            xTaskNotify(intTaskH, 0x01, eSetBits);                  //notify interrupt task for water flow control
-
-            vTaskDelay(pdMS_TO_TICKS(100)); 
-
-            bool onWait = true;
-            uint32_t ulNotifiedValue = 0;
-            
-            do{
-
-                xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
-
-                if((ulNotifiedValue & 0x10) >> 4){
-
-                    resetRelay(dataBytes, WATER_INLET_VALVE);
-                    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
-                    vTaskDelay(pdMS_TO_TICKS(30));
-
-                    //ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
-
-                    onWait = false;
-                }
-
-            }while(onWait);
-
-            //ESP_LOGI(CONTROL_TASK_TAG, "END AIRBREAK CHECK");
+            onWait = false;
         }
-    }
+
+    }while(onWait);
+
+//    InputSwStruct inputSwStruct;
+//
+//    if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
+//
+//        if(inputSwStruct.airBreakSw){
+//
+//            setRelay(dataBytes, WATER_INLET_VALVE);
+//            writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
+//            //ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
+//
+//            bool onWait = true;
+//            uint32_t ulNotifiedValue = 0;
+//
+//            do{
+//
+//                xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
+//
+//                if((ulNotifiedValue & 0x10) >> 4){
+//
+//                    resetRelay(dataBytes, WATER_INLET_VALVE);
+//                    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
+//                    vTaskDelay(pdMS_TO_TICKS(30));
+//
+//                    xTaskNotify(intTaskH, 0x01, eSetBits);                  //notify interrupt task for water flow control
+//
+//                    vTaskDelay(pdMS_TO_TICKS(100));
+//
+//                    //ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
+//
+//                    onWait = false;
+//                }
+//
+//            }while(onWait);
+//
+//            //ESP_LOGI(CONTROL_TASK_TAG, "END AIRBREAK CHECK");
+//        }
+//    }
 
 }
 
 void resetBrewer(uint8_t *dataBytes){
     InputSwStruct inputSwStruct;
+
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+
+//    getByteOfPointer(dataBytes,0);
+//    getByteOfPointer(dataBytes + 1,0);
+
+//    int a = *dataBytes;
+//    int b = *dataBytes;
+//    ESP_LOGI(CONTROL_TASK_TAG, "-> %u - %u", *dataBytes, *(dataBytes+1));
+#endif
 
     setRelay(dataBytes, COFFEE_BREWER_MOTOR);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
@@ -1377,7 +1432,11 @@ void resetBrewer(uint8_t *dataBytes){
             }
 
             if(countIt > 1){
-                vTaskDelay(pdMS_TO_TICKS(2700));
+                vTaskDelay(pdMS_TO_TICKS(2400)); //2700
+
+#ifdef FIXED
+                readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+#endif
                 resetRelay(dataBytes, COFFEE_BREWER_MOTOR);
                 writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
             }
@@ -1386,7 +1445,7 @@ void resetBrewer(uint8_t *dataBytes){
 
         vTaskDelay(pdMS_TO_TICKS(10));
 
-    }while(countIt < 2);
+    } while(countIt < 2);
 
 }
 
@@ -1394,10 +1453,20 @@ void clearCoffeeChamber(uint8_t *dataBytes){
 
     vTaskDelay(pdMS_TO_TICKS(700));
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, COFFEE_RELEASE_MAGNET);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);    
 
     vTaskDelay(pdMS_TO_TICKS(1000));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, COFFEE_RELEASE_MAGNET);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
@@ -1409,10 +1478,20 @@ void clearCoffeeChamber(uint8_t *dataBytes){
 
 void setBrewer2StartPosition(uint8_t *dataBytes){
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, COFFEE_BREWER_MOTOR);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);     
 
-    vTaskDelay(pdMS_TO_TICKS(3700));
+    vTaskDelay(pdMS_TO_TICKS(3400)); //3700
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, COFFEE_BREWER_MOTOR);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
@@ -1421,6 +1500,11 @@ void setBrewer2StartPosition(uint8_t *dataBytes){
 
 void setBrewer2InjectPosition(uint8_t *dataBytes){
     InputSwStruct inputSwStruct;
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     setRelay(dataBytes, COFFEE_BREWER_MOTOR);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
@@ -1436,6 +1520,11 @@ void setBrewer2InjectPosition(uint8_t *dataBytes){
         vTaskDelay(pdMS_TO_TICKS(10));
 
     }while(waiting);
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, COFFEE_BREWER_MOTOR);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -1454,11 +1543,21 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
 
     xTaskNotify(boilerTaskH, 0x10, eSetBits);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, THREE_WAY_VALVE);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(700));
-    
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
@@ -1477,11 +1576,20 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
 
     }while(onWait);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(1000));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, THREE_WAY_VALVE);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -1574,6 +1682,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
             if(thirdPowder)
                 gpio_set_level(POWDER_C_PIN, 1);
             else{
+#ifdef FIXED
+                readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
                 setRelay(dataBytes, outputRelay);
                 writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
             }
@@ -1597,6 +1710,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
             if(thirdPowder)
                 gpio_set_level(POWDER_C_PIN, 0);
             else{
+#ifdef FIXED
+                readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
                 resetRelay(dataBytes, outputRelay);
                 writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
             }
@@ -1611,11 +1729,20 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
     }
 
     if(divideProcess){
-        
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
         setRelay(dataBytes, SOLENOID_VALVE_2);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
         vTaskDelay(pdMS_TO_TICKS(200));
+
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
         setRelay(dataBytes, WHIPPER);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
@@ -1625,6 +1752,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
         if(thirdPowder)
             gpio_set_level(POWDER_C_PIN, 1);
         else{
+#ifdef FIXED
+            readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
             setRelay(dataBytes, outputRelay);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
         }
@@ -1649,6 +1781,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
                     xQueueSend(xQueueInputPulse, (void *) &lastPulses, portMAX_DELAY);
 
                 xTaskNotify(boilerTaskH, 0x20, eSetBits);               //max hot
+
+#ifdef FIXED
+                readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
                 setRelay(dataBytes, PUMP);
                 writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -1679,6 +1816,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
                             if(thirdPowder)
                                 gpio_set_level(POWDER_C_PIN, 0);
                             else{
+#ifdef FIXED
+                                readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
                                 resetRelay(dataBytes, outputRelay);
                                 writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
                                 vTaskDelay(pdMS_TO_TICKS(200));
@@ -1693,6 +1835,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
 
                 if(counts < (itInt - 1))
                     xTaskNotify(boilerTaskH, 0x10, eSetBits);                   //hot
+
+#ifdef FIXED
+                readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
                 resetRelay(dataBytes, PUMP);
                 writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -1711,6 +1858,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
             if(thirdPowder)
                 gpio_set_level(POWDER_C_PIN, 0);
             else{
+#ifdef FIXED
+                readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
                 resetRelay(dataBytes, outputRelay);
                 writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
             }
@@ -1727,15 +1879,30 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
 
         xTaskNotify(boilerTaskH, 0x20, eSetBits);
 
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
         setRelay(dataBytes, SOLENOID_VALVE_2);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
         vTaskDelay(pdMS_TO_TICKS(700));
 
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
         setRelay(dataBytes, PUMP);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
         vTaskDelay(pdMS_TO_TICKS(500));
+
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
         setRelay(dataBytes, WHIPPER);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
@@ -1749,6 +1916,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
         if(thirdPowder)
             gpio_set_level(POWDER_C_PIN, 1);
         else{
+#ifdef FIXED
+            readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
             setRelay(dataBytes, outputRelay);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
         }
@@ -1778,6 +1950,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
                     if(thirdPowder)
                         gpio_set_level(POWDER_C_PIN, 0);
                     else{
+#ifdef FIXED
+                        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
                         resetRelay(dataBytes, outputRelay);
                         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
                     }
@@ -1795,6 +1972,11 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
             if(thirdPowder)
                 gpio_set_level(POWDER_C_PIN, 0);
             else{
+#ifdef FIXED
+                readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
                 resetRelay(dataBytes, outputRelay);
                 writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
             }
@@ -1805,7 +1987,12 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
         else
             vTaskDelay(pdMS_TO_TICKS(200));
 
-    
+
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
         resetRelay(dataBytes, PUMP);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
@@ -1813,11 +2000,21 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
 
     }
 
-    
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     resetRelay(dataBytes, SOLENOID_VALVE_2);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(4000));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, WHIPPER);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
@@ -1863,6 +2060,11 @@ static void injectPowderPlusWaterBackUp(uint8_t *dataBytes, const uint16_t pulse
         if(thirdPowder)
             gpio_set_level(POWDER_C_PIN, 1);
         else{
+#ifdef FIXED
+            readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
             setRelay(dataBytes, outputRelay);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
         }
@@ -1887,6 +2089,11 @@ static void injectPowderPlusWaterBackUp(uint8_t *dataBytes, const uint16_t pulse
         if(thirdPowder)
             gpio_set_level(POWDER_C_PIN, 0);
         else{
+#ifdef FIXED
+            readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
             resetRelay(dataBytes, outputRelay);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
         }
@@ -1906,15 +2113,30 @@ static void injectPowderPlusWaterBackUp(uint8_t *dataBytes, const uint16_t pulse
 
     xTaskNotify(boilerTaskH, 0x20, eSetBits);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, SOLENOID_VALVE_2);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(700));
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(500));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     setRelay(dataBytes, WHIPPER);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
@@ -1928,6 +2150,11 @@ static void injectPowderPlusWaterBackUp(uint8_t *dataBytes, const uint16_t pulse
     if(thirdPowder)
         gpio_set_level(POWDER_C_PIN, 1);
     else{
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
         setRelay(dataBytes, outputRelay);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
     }
@@ -1960,6 +2187,11 @@ static void injectPowderPlusWaterBackUp(uint8_t *dataBytes, const uint16_t pulse
                 if(thirdPowder)
                     gpio_set_level(POWDER_C_PIN, 0);
                 else{
+#ifdef FIXED
+                    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
                     resetRelay(dataBytes, outputRelay);
                     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
                 }
@@ -1979,6 +2211,11 @@ static void injectPowderPlusWaterBackUp(uint8_t *dataBytes, const uint16_t pulse
         if(thirdPowder)
             gpio_set_level(POWDER_C_PIN, 0);
         else{
+#ifdef FIXED
+            readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
             resetRelay(dataBytes, outputRelay);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
         }
@@ -1990,16 +2227,30 @@ static void injectPowderPlusWaterBackUp(uint8_t *dataBytes, const uint16_t pulse
         vTaskDelay(pdMS_TO_TICKS(200));
 
 
-    
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     resetRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(700));
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     resetRelay(dataBytes, SOLENOID_VALVE_2);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(4000));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, WHIPPER);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
@@ -2028,11 +2279,21 @@ static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses, uint8
 
     xTaskNotify(boilerTaskH, 0x20, eSetBits);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, SOLENOID_VALVE_1);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(700));
-    
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
@@ -2049,11 +2310,20 @@ static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses, uint8
 
     }while(onWait);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(1000));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, SOLENOID_VALVE_1);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -2073,11 +2343,21 @@ static void injectOnlyWaterLineManual(uint8_t *dataBytes){
     //ESP_LOGI(CONTROL_TASK_TAG, "Inject only water line: ON");
     xTaskNotify(boilerTaskH, 0x20, eSetBits);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, SOLENOID_VALVE_1);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(700));
-    
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
@@ -2100,11 +2380,20 @@ static void injectOnlyWaterLineManual(uint8_t *dataBytes){
 
     }while(onWait);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(1000));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, SOLENOID_VALVE_1);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -2116,10 +2405,20 @@ static void injectOnlyWaterLineManual(uint8_t *dataBytes){
 }
 
 static void doBoilerPulse(uint8_t *dataBytes){
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(1200));        //1200
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -2138,6 +2437,11 @@ static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop){
     double cTime = 0;
 
     InputSwStruct inputSwStruct;
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     setRelay(dataBytes, COFFEE_GRINDER_MOTOR);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -2171,6 +2475,11 @@ static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop){
 
     }while(wait2Finish);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     resetRelay(dataBytes, COFFEE_GRINDER_MOTOR);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
@@ -2183,10 +2492,20 @@ static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop){
             runProcess = false;
         }
         else{
+#ifdef FIXED
+            readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
             setRelay(dataBytes, COFFEE_RELEASE_MAGNET);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);    
 
             vTaskDelay(pdMS_TO_TICKS(1000));
+
+#ifdef FIXED
+            readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
             resetRelay(dataBytes, COFFEE_RELEASE_MAGNET);
             writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
@@ -2261,15 +2580,30 @@ static void cleanMachine(uint8_t *dataBytes){
     ////////
     pulses = 100;
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, SOLENOID_VALVE_2);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(700));
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     setRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(700));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     setRelay(dataBytes, WHIPPER);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
@@ -2287,15 +2621,30 @@ static void cleanMachine(uint8_t *dataBytes){
 
     }while(onWait);
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     resetRelay(dataBytes, PUMP);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(700));
 
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
     resetRelay(dataBytes, SOLENOID_VALVE_2);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
     vTaskDelay(pdMS_TO_TICKS(2000));
+
+#ifdef FIXED
+    readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
     resetRelay(dataBytes, WHIPPER);
     writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);  
@@ -2319,11 +2668,21 @@ void calculatePulseTime(uint8_t *dataBytes){
         if(i != 0)
             xTaskNotify(intTaskH, 0x02, eSetBits);
 
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
         setRelay(dataBytes, SOLENOID_VALVE_2);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
-        vTaskDelay(pdMS_TO_TICKS(700)); 
-    
+        vTaskDelay(pdMS_TO_TICKS(700));
+
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
+
         setRelay(dataBytes, PUMP);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
@@ -2337,10 +2696,19 @@ void calculatePulseTime(uint8_t *dataBytes){
 
         }while(onWait);
 
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+#endif
+
         resetRelay(dataBytes, PUMP);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
 
         vTaskDelay(pdMS_TO_TICKS(1000));
+
+#ifdef FIXED
+        readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
+
+#endif
 
         resetRelay(dataBytes, SOLENOID_VALVE_2);
         writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
@@ -2380,10 +2748,6 @@ void calculatePulseTime(uint8_t *dataBytes){
 
 }
 
-static void waitMachine2Start(uint8_t *dataBytes){
-    checkAirBreak(dataBytes);
-
-}
 
 static void startBoilerTask(){
     xTaskNotify(boilerTaskH, 0x04, eSetBits);         
@@ -3237,7 +3601,7 @@ static void controlTask(void *pvParameters){
             }
         }
 
-        checkAirBreak(outputIO_Buff);
+//        checkAirBreak(outputIO_Buff);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
