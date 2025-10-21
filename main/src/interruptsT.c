@@ -13,7 +13,7 @@ static void checkAirBreakSw(uint8_t *iBuff){
 }
 
 
-static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oBuff, WaterFlowData *wFlowData){
+static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oBuff, WaterFlowData *wFlowData, const bool withNotify){
     readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, iBuff, 1);
 
     inputStruct->previousAirBreakSw = inputStruct->airBreakSw;
@@ -36,7 +36,8 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
             wFlowData->waterFill = false;
             wFlowData->state = false;
 
-            xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
+            if(withNotify)
+                xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
 
             //close valve
             readBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
@@ -50,6 +51,36 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
                 wFlowData->alarm = false;
                 xTaskNotify(uiTaskH, 0x01, eSetBits);
             }
+
+        } else {
+            double currentTime = esp_timer_get_time() - wFlowData->waterSafeTime;
+
+            if(currentTime > 12000000) {      //12 seg
+                ESP_LOGI(INTERRUPTS_TASK_TAG, "emergency close water");
+
+                wFlowData->waterFill = false;
+                wFlowData->state = false;
+                wFlowData->waterSafeTime = 0;
+
+                //close valve
+                readBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                cleanReadByte4WaterInlet(oBuff);
+
+                writeBytesMCP2307Int(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
+                vTaskDelay(pdMS_TO_TICKS(100));
+
+                if(wFlowData->alarm){
+                    wFlowData->alarm = false;
+                    xTaskNotify(uiTaskH, 0x01, eSetBits);
+                }
+
+                vTaskDelay(pdMS_TO_TICKS(1000));
+
+                esp_restart();
+
+            }
+
 
         }
 
@@ -198,7 +229,7 @@ static void interruptsTask(void *pvParameters){
 
     InputSwStruct inputSwStruct = {false, false, false, false,
                                    false, false, false, 0};
-    WaterFlowData waterFlowData = {false, false, false, true, 0.0f};
+    WaterFlowData waterFlowData = {false, false, false, true, 0.0f, 0.0f, 0.0f};
     PulseTestData pulseTestData = {false, 0, 0};
 
     inputIO_Buff = (uint8_t *)malloc(1);
@@ -210,7 +241,7 @@ static void interruptsTask(void *pvParameters){
     ESP_LOGI(INTERRUPTS_TASK_TAG, "ONLINE");
 
     //xQueueOverwrite(xQueueInputPulse, (void *) &count);
-    readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData);
+    readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData, true);
 
     while(1){
 
@@ -245,6 +276,8 @@ static void interruptsTask(void *pvParameters){
                 setWaterInletBit(outputIO_Buff);
                 writeBytesMCP2307Int(MCP23017_OUTPUT_ADDR, 0x12, outputIO_Buff, 1);
                 vTaskDelay(pdMS_TO_TICKS(100));
+
+                waterFlowData.waterSafeTime = esp_timer_get_time();
 
             }
         }
@@ -281,10 +314,20 @@ static void interruptsTask(void *pvParameters){
                 case MCP23017_INTB_PIN:
 
                     ESP_LOGI(INTERRUPTS_TASK_TAG, "int pin detected");
-                    readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData);
+                    readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData, false);
+
+                    waterFlowData.checkRefTime = esp_timer_get_time();
 
                 break;
             }
+        } else {
+            double currentTime = esp_timer_get_time() - waterFlowData.checkRefTime;
+
+            if(currentTime > 800000) {      //800 mseg
+                waterFlowData.checkRefTime = esp_timer_get_time();
+                readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData, false);
+            }
+
         }
 
      

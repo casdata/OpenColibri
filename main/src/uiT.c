@@ -689,7 +689,7 @@ static void uiTask(void *pvParameters){
     //double refTimeUi, cTimeUi;
 
     initLcd();
-    write2LCD("OpenColibri V016", 16, 0);
+    write2LCD("OpenColibri V017", 16, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     //xTaskNotify(controlTaskH, 0x01, eSetBits);              //Notify control task that is ready
