@@ -717,10 +717,14 @@ static void uiTask(void *pvParameters){
 
                     fullClearLcdScreen(); 
                     if(uiData.page == PAGE_1)
-                        write2LCD("1", 1, 8);
+                        write2LCD("1", 1, 3);
+//                        write2LCD("1", 1, 8);
                     else
-                        write2LCD("2", 1, 8);   
+                        write2LCD("2", 1, 3);
                 }
+
+
+                inBootingCodeState(&uiData);
 
             break;
             case BOOTING_UI:
@@ -751,7 +755,7 @@ static void uiTask(void *pvParameters){
                     previousUiState = currentUiState;
 
                     fullClearLcdScreen();
-                    write2LCD("HEATING WATER!!", 12, 1);
+                    write2LCD("HEATING WATER!!", 15, 1);
                 }
 
                 currentUiState = IDLE_UI;

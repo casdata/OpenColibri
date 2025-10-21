@@ -1363,43 +1363,6 @@ static void checkAirBreak(uint8_t *dataBytes) {
 
     }while(onWait);
 
-//    InputSwStruct inputSwStruct;
-//
-//    if(xQueuePeek(xQueueInputsSw, (void *) &inputSwStruct, pdMS_TO_TICKS(60))){
-//
-//        if(inputSwStruct.airBreakSw){
-//
-//            setRelay(dataBytes, WATER_INLET_VALVE);
-//            writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
-//            //ESP_LOGW(CONTROL_TASK_TAG, "OPEN WATER_INLET_VALVE");
-//
-//            bool onWait = true;
-//            uint32_t ulNotifiedValue = 0;
-//
-//            do{
-//
-//                xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
-//
-//                if((ulNotifiedValue & 0x10) >> 4){
-//
-//                    resetRelay(dataBytes, WATER_INLET_VALVE);
-//                    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
-//                    vTaskDelay(pdMS_TO_TICKS(30));
-//
-//                    xTaskNotify(intTaskH, 0x01, eSetBits);                  //notify interrupt task for water flow control
-//
-//                    vTaskDelay(pdMS_TO_TICKS(100));
-//
-//                    //ESP_LOGW(CONTROL_TASK_TAG, "CLOSE WATER_INLET_VALVE");
-//
-//                    onWait = false;
-//                }
-//
-//            }while(onWait);
-//
-//            //ESP_LOGI(CONTROL_TASK_TAG, "END AIRBREAK CHECK");
-//        }
-//    }
 
 }
 
@@ -3540,7 +3503,7 @@ static void controlTask(void *pvParameters){
                 
                     }
                     else
-                        xTaskNotify(uiTaskH, 0x400, eSetBits);
+                        xTaskNotify(uiTaskH, 0x400, eSetBits);                  //wait heating water message
 
                 }
                 
