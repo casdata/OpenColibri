@@ -1097,10 +1097,12 @@ bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
                         vTaskDelay(pdMS_TO_TICKS(1000));
                     }
 
-                    if(*boilerPulse == 1){
-                        *boilerPulse = 0;
-                        doBoilerPulse(dataBytes);
-                    }
+//                    if(*boilerPulse == 1){
+//                        *boilerPulse = 0;
+//                        doBoilerPulse(dataBytes);
+//                    }
+
+                    doBoilerPulse(dataBytes);
 
                     injecBrewerWater(dataBytes, myRecipe->modulesArray[i].pulses);
 
@@ -1111,10 +1113,12 @@ bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *po
                 case COFFEE_PRE_M:
                     vTaskDelay(pdMS_TO_TICKS(2000));
 
-                    if(*boilerPulse == 1){
-                        *boilerPulse = 0;
-                        doBoilerPulse(dataBytes);
-                    }
+//                    if(*boilerPulse == 1){
+//                        *boilerPulse = 0;
+//                        doBoilerPulse(dataBytes);
+//                    }
+
+                    doBoilerPulse(dataBytes);
 
                     injecBrewerWater(dataBytes, myRecipe->modulesArray[i].pulses);
 
@@ -1522,11 +1526,15 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
 #endif
 
     setRelay(dataBytes, PUMP);
-    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2); 
+    writeBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x14, dataBytes, 2);
+
+    uint16_t postPulses = pulses + 1000;
+
+    bool boilerState = true;
 
     startTime = esp_timer_get_time();
 
-    xQueueSend(xQueueInputPulse, (void *) &pulses, portMAX_DELAY);
+    xQueueSend(xQueueInputPulse, (void *) &postPulses, portMAX_DELAY);
 
     do{
         xTaskNotifyWait(0xFFFF, 0xFFFF, &ulNotifiedValue, portMAX_DELAY);
@@ -1535,9 +1543,15 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
             onWait = false;
             endTime = esp_timer_get_time() - startTime;
             //ESP_LOGI(CONTROL_TASK_TAG, "TURNING OFF PUMP %lf", endTime);
+        } else if((ulNotifiedValue & 0x20) >> 5){
+            xTaskNotify(boilerTaskH, 0x08, eSetBits);                           //set boiler to idle
+            boilerState = false;
         }
 
     }while(onWait);
+
+    if(boilerState)
+        xTaskNotify(boilerTaskH, 0x08, eSetBits);                           //set boiler to idle
 
 #ifdef FIXED
     readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
@@ -1559,7 +1573,6 @@ void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses){
 
     //ESP_LOGE(CONTROL_TASK_TAG, "Inject brewer water: OFF");
 
-    xTaskNotify(boilerTaskH, 0x08, eSetBits);
 }
 
 static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay, bool thirdPowder, uint8_t *boilerPulse){
@@ -1686,10 +1699,15 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
         }
     }
 
-    if(*boilerPulse == 1){
-        *boilerPulse = 0;
-        doBoilerPulse(dataBytes);
-    }
+//    if(*boilerPulse == 1){
+//        *boilerPulse = 0;
+//        doBoilerPulse(dataBytes);
+//    }
+
+    doBoilerPulse(dataBytes);
+
+
+    xTaskNotify(intTaskH, 0x08, eSetBits);                  //disable water failsafe
 
     if(divideProcess){
 #ifdef FIXED
@@ -1841,6 +1859,7 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
         rTime = 0;
 
         xTaskNotify(boilerTaskH, 0x20, eSetBits);
+        xTaskNotify(intTaskH, 0x08, eSetBits);                  //disable water failsafe
 
 #ifdef FIXED
         readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
@@ -1964,6 +1983,9 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
     }
 
 
+    xTaskNotify(intTaskH, 0x10, eSetBits);                  //enable water failsafe
+
+
 #ifdef FIXED
     readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
 
@@ -1985,7 +2007,7 @@ static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uin
     //ESP_LOGE(CONTROL_TASK_TAG, "Inject powder water: OFF - %lf - %lf| puls: %d | gr: %d", powderTime, pulseTime, pulses, gr);
 
     xTaskNotify(boilerTaskH, 0x08, eSetBits);
-    
+
     
 }
 
@@ -2069,10 +2091,12 @@ static void injectPowderPlusWaterBackUp(uint8_t *dataBytes, const uint16_t pulse
     cTime = 0;
     rTime = 0;
 
-    if(*boilerPulse == 1){
-        *boilerPulse = 0;
-        doBoilerPulse(dataBytes);
-    }
+//    if(*boilerPulse == 1){
+//        *boilerPulse = 0;
+//        doBoilerPulse(dataBytes);
+//    }
+
+    doBoilerPulse(dataBytes);
 
     xTaskNotify(boilerTaskH, 0x20, eSetBits);
 
@@ -2235,12 +2259,15 @@ static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses, uint8
     bool onWait = true;
 
     //ESP_LOGI(CONTROL_TASK_TAG, "Inject only water line: ON");
-    if(*boilerPulse == 1){
-        *boilerPulse = 0;
-        doBoilerPulse(dataBytes);
-    }
+//    if(*boilerPulse == 1){
+//        *boilerPulse = 0;
+//        doBoilerPulse(dataBytes);
+//    }
+
+    doBoilerPulse(dataBytes);
 
     xTaskNotify(boilerTaskH, 0x20, eSetBits);
+    xTaskNotify(intTaskH, 0x08, eSetBits);                  //disable water failsafe
 
 #ifdef FIXED
     readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);
@@ -2272,6 +2299,8 @@ static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses, uint8
         }
 
     }while(onWait);
+
+    xTaskNotify(intTaskH, 0x10, eSetBits);                  //enable water failsafe
 
 #ifdef FIXED
     readBytesMCP2307Cont(MCP23017_OUTPUT_ADDR, 0x12, dataBytes, 2);

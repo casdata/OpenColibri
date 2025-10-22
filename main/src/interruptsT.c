@@ -47,20 +47,19 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
             writeBytesMCP2307Int(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
             vTaskDelay(pdMS_TO_TICKS(100));
 
-            if(wFlowData->alarm){
-                wFlowData->alarm = false;
-                xTaskNotify(uiTaskH, 0x01, eSetBits);
-            }
+//            if(wFlowData->alarm){
+//                wFlowData->alarm = false;
+//                xTaskNotify(uiTaskH, 0x01, eSetBits);
+//            }
 
         } else {
             double currentTime = esp_timer_get_time() - wFlowData->waterSafeTime;
 
-            if(currentTime > 12000000) {      //12 seg
+            if(wFlowData->failSafe && currentTime > 12000000) {      //12 seg
                 ESP_LOGI(INTERRUPTS_TASK_TAG, "emergency close water");
 
                 wFlowData->waterFill = false;
                 wFlowData->state = false;
-                wFlowData->waterSafeTime = 0;
 
                 //close valve
                 readBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
@@ -70,10 +69,10 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
                 writeBytesMCP2307Int(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
                 vTaskDelay(pdMS_TO_TICKS(100));
 
-                if(wFlowData->alarm){
-                    wFlowData->alarm = false;
-                    xTaskNotify(uiTaskH, 0x01, eSetBits);
-                }
+//                if(wFlowData->alarm){
+//                    wFlowData->alarm = false;
+//                    xTaskNotify(uiTaskH, 0x01, eSetBits);
+//                }
 
                 vTaskDelay(pdMS_TO_TICKS(1000));
 
@@ -138,12 +137,35 @@ static void check4Notifications(WaterFlowData *wFlowData, PulseTestData *pulseDa
             pulseData->manualReset = true;
             ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: prepare 4 manual");
         }
+        else if((ulNotifiedValue & 0x08) >> 3){
+            wFlowData->failSafe= false;
+            ESP_LOGE(INTERRUPTS_TASK_TAG, "Notification: disable water fail-save");
+        }
+        else if((ulNotifiedValue & 0x10) >> 4){
+            wFlowData->failSafe = true;
+            wFlowData->waterSafeTime = esp_timer_get_time();
+            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: enable water fail-save");
+        }
+
         
     }
 }
 
-static bool check4PulseCount(uint16_t *ptrCount, uint16_t *ptrCountTarget){
+static bool check4PulseCount(uint16_t *ptrCount, uint16_t *ptrCountTarget, uint16_t *ptrPreEndCount){
     if(xQueueReceive(xQueueInputPulse, (void *) ptrCountTarget, pdMS_TO_TICKS(10)) == pdPASS){
+        if (*ptrCountTarget >= 1000){
+            *ptrCountTarget -= 1000;
+
+            if (*ptrCountTarget < 200)
+                *ptrPreEndCount = *ptrCountTarget - ((*ptrCountTarget) * 0.18); //17
+            else
+                *ptrPreEndCount = *ptrCountTarget - ((*ptrCountTarget) * 0.30); //27
+
+
+//            ESP_LOGI(INTERRUPTS_TASK_TAG, "pre end calculated %d to %d", *ptrCountTarget, *ptrPreEndCount);
+        } else
+            *ptrPreEndCount = 0;
+
         *ptrCount = 0;
         return true;
     }
@@ -222,6 +244,8 @@ static void interruptsTask(void *pvParameters){
     int16_t pinNum;
     uint16_t count = 0;
     uint16_t targetCount = 40;
+    uint16_t endCount = targetCount;
+    bool endCountCheck = false;
     bool checkingCount = false;
 
     uint8_t *inputIO_Buff;
@@ -229,7 +253,7 @@ static void interruptsTask(void *pvParameters){
 
     InputSwStruct inputSwStruct = {false, false, false, false,
                                    false, false, false, 0};
-    WaterFlowData waterFlowData = {false, false, false, true, 0.0f, 0.0f, 0.0f};
+    WaterFlowData waterFlowData = {false, false, false, true, 0.0f, 0.0f, 0.0f, false};
     PulseTestData pulseTestData = {false, 0, 0};
 
     inputIO_Buff = (uint8_t *)malloc(1);
@@ -253,7 +277,10 @@ static void interruptsTask(void *pvParameters){
         }
 
         if(!checkingCount){
-            checkingCount = check4PulseCount(&count, &targetCount);
+            checkingCount = check4PulseCount(&count, &targetCount, &endCount);
+
+            endCountCheck = endCount != 0;
+
             if(checkingCount && pulseTestData.state)
                 pulseTestData.refTime = esp_timer_get_time();
 
@@ -262,10 +289,11 @@ static void interruptsTask(void *pvParameters){
         if(waterFlowData.state){
             double currentTime = esp_timer_get_time() - waterFlowData.refTime;
 
-            if(!waterFlowData.alarm && currentTime > 8000000){      //8 seg
-                waterFlowData.alarm = true;
-                xTaskNotify(uiTaskH, 0x02, eSetBits);
-            } else if (!waterFlowData.waterFill && currentTime > 2000000) {                     //2 seg
+//            if(!waterFlowData.alarm && currentTime > 8000000){      //8 seg
+//                waterFlowData.alarm = true;
+//                xTaskNotify(uiTaskH, 0x02, eSetBits);
+//            } else
+            if (!waterFlowData.waterFill && currentTime > 2000000) {                     //2 seg
                 waterFlowData.waterFill = true;
 
                 //open valve
@@ -289,23 +317,29 @@ static void interruptsTask(void *pvParameters){
                 case VOLUMETRIC_PIN:
                     count++;
 
-                    if(count >= targetCount && checkingCount){
-                        xTaskNotify(controlTaskH, 0x08, eSetBits);
+                    if(checkingCount) {
+                        if (count >= targetCount) {
+                            xTaskNotify(controlTaskH, 0x08, eSetBits);
 
-                        if(pulseTestData.state){
-                            pulseTestData.state = false;
+                            if (pulseTestData.state) {
+                                pulseTestData.state = false;
 
-                            pulseTestData.pulseTime = esp_timer_get_time() - pulseTestData.refTime;
-                            pulseTestData.pulseTime /= targetCount;
+                                pulseTestData.pulseTime = esp_timer_get_time() - pulseTestData.refTime;
+                                pulseTestData.pulseTime /= targetCount;
 
-                            xQueueSend(xQueueInputTimePerPulse, (void *) &pulseTestData.pulseTime, portMAX_DELAY);
+                                xQueueSend(xQueueInputTimePerPulse, (void *) &pulseTestData.pulseTime, portMAX_DELAY);
 
-                            //ESP_LOGI(INTERRUPTS_TASK_TAG, "pulseTime -> %lf", pulseTestData.pulseTime);
+                                //ESP_LOGI(INTERRUPTS_TASK_TAG, "pulseTime -> %lf", pulseTestData.pulseTime);
+                            }
+
+                            checkingCount = false;
+                            //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d - %d", count, targetCount);
+                        } else if (endCountCheck) {
+                            if (count >= endCount) {
+                                xTaskNotify(controlTaskH, 0x20, eSetBits);
+                                endCountCheck = false;
+                            }
                         }
-
-                        checkingCount = false;
-
-                        //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d - %d", count, targetCount);
                     }
 
                     //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d - %d", count, targetCount);

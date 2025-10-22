@@ -12,6 +12,7 @@ typedef struct WaterFlowStruct{
     double  refTime;
     double  checkRefTime;
     double  waterSafeTime;
+    bool    failSafe;
 } WaterFlowData;
 
 typedef struct PulseTestStruct{
@@ -27,7 +28,7 @@ extern TaskHandle_t intTaskH;
 static void checkAirBreakSw(uint8_t *iBuff);
 static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oBuff, WaterFlowData *wFlowData, const bool withNotify);
 static void check4Notifications(WaterFlowData *wFlowData, PulseTestData *pulseData);
-static bool check4PulseConut(uint16_t *ptrCount, uint16_t *ptrCountTarget);
+static bool check4PulseConut(uint16_t *ptrCount, uint16_t *ptrCountTarget, uint16_t *ptrPreEndCount);
 static void readBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
 static void writeBytesMCP2307Int(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
 static void cleanReadByte4WaterInlet(uint8_t *byteData);
