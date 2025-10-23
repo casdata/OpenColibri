@@ -27,11 +27,11 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
 
 
     if(wFlowData->waterFill){
-        ESP_LOGI(INTERRUPTS_TASK_TAG, "on waterFill");
+//        ESP_LOGI(INTERRUPTS_TASK_TAG, "on waterFill");
 
         if(!inputStruct->airBreakSw){
 
-            ESP_LOGI(INTERRUPTS_TASK_TAG, "close water");
+//            ESP_LOGI(INTERRUPTS_TASK_TAG, "close water");
 
             wFlowData->waterFill = false;
             wFlowData->state = false;
@@ -91,7 +91,7 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
         wFlowData->state = true;
         wFlowData->waterFill = false;
 
-        ESP_LOGI(INTERRUPTS_TASK_TAG, "open water");
+//        ESP_LOGI(INTERRUPTS_TASK_TAG, "open water");
 
         wFlowData->refTime = esp_timer_get_time();
 
@@ -131,20 +131,20 @@ static void check4Notifications(WaterFlowData *wFlowData, PulseTestData *pulseDa
 //        }
         if((ulNotifiedValue & 0x02) >> 1){
             pulseData->state = true;
-            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: calculate pulse time");
+//            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: calculate pulse time");
         }
         else if((ulNotifiedValue & 0x04) >> 2){
             pulseData->manualReset = true;
-            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: prepare 4 manual");
+//            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: prepare 4 manual");
         }
         else if((ulNotifiedValue & 0x08) >> 3){
             wFlowData->failSafe= false;
-            ESP_LOGE(INTERRUPTS_TASK_TAG, "Notification: disable water fail-save");
+//            ESP_LOGE(INTERRUPTS_TASK_TAG, "Notification: disable water fail-save");
         }
         else if((ulNotifiedValue & 0x10) >> 4){
             wFlowData->failSafe = true;
             wFlowData->waterSafeTime = esp_timer_get_time();
-            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: enable water fail-save");
+//            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: enable water fail-save");
         }
 
         
@@ -350,7 +350,7 @@ static void interruptsTask(void *pvParameters){
                 break;
                 case MCP23017_INTB_PIN:
 
-                    ESP_LOGI(INTERRUPTS_TASK_TAG, "int pin detected");
+//                    ESP_LOGI(INTERRUPTS_TASK_TAG, "int pin detected");
                     readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData, false);
 
                     waterFlowData.checkRefTime = esp_timer_get_time();

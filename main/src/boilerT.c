@@ -140,7 +140,7 @@ static void checkNotifications4Boiler(BoilerState *bState){
         }
 
         if((ulNotifiedValue & 0x040) >> 6) {    //short max heat pulse
-            ESP_LOGW(UI_TASK_TAG, "Set Boiler to conditional IDLE");
+//            ESP_LOGW(UI_TASK_TAG, "Set Boiler to conditional IDLE");
             *bState = HOT_B_2_GRADUAL;
 //            *bState = IDLE_2_HOT_MAX_B;
 //            extraHeatData->enable = true;
