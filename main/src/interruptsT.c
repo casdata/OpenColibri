@@ -55,7 +55,7 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
         } else {
             double currentTime = esp_timer_get_time() - wFlowData->waterSafeTime;
 
-            if(wFlowData->failSafe && currentTime > 12000000) {      //12 seg
+            if(wFlowData->failSafe && currentTime > 6000000) {      //6 seg
                 ESP_LOGI(INTERRUPTS_TASK_TAG, "emergency close water");
 
                 wFlowData->waterFill = false;
@@ -156,10 +156,13 @@ static bool check4PulseCount(uint16_t *ptrCount, uint16_t *ptrCountTarget, uint1
         if (*ptrCountTarget >= 1000){
             *ptrCountTarget -= 1000;
 
-            if (*ptrCountTarget < 200)
-                *ptrPreEndCount = *ptrCountTarget - ((*ptrCountTarget) * 0.18); //17
+            if(*ptrCountTarget > 199)
+                *ptrPreEndCount = *ptrCountTarget - ((*ptrCountTarget) * 0.40); //27
+            else if (*ptrCountTarget > 149)
+                *ptrPreEndCount = *ptrCountTarget - ((*ptrCountTarget) * 0.16); //
             else
-                *ptrPreEndCount = *ptrCountTarget - ((*ptrCountTarget) * 0.30); //27
+                *ptrPreEndCount = *ptrCountTarget - ((*ptrCountTarget) * 0.11); //
+
 
 
 //            ESP_LOGI(INTERRUPTS_TASK_TAG, "pre end calculated %d to %d", *ptrCountTarget, *ptrPreEndCount);

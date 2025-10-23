@@ -46,7 +46,8 @@ typedef enum{
     IDLE_2_HOT_MAX_B,
     HOT_B,
     HOT_2_IDLE_B,
-    HOT_MAX_B
+    HOT_MAX_B,
+    HOT_B_2_GRADUAL
 } BoilerState;
 
 typedef enum{
@@ -56,6 +57,15 @@ typedef enum{
     S_DATA
 } NextionData;
 
+typedef enum {
+    SHORT_T = 0,
+    LONG_T,
+} ExtraHeat;
+
+typedef struct ExtraHeatStruct{
+    bool enable;
+    double refTime;
+} ExtraHeatData;
 
 typedef struct BoilerBoolStruct{
     bool boilerIsOn;

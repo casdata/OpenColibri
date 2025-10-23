@@ -125,7 +125,8 @@ static void checkNotifications4Boiler(BoilerState *bState){
 
         if((ulNotifiedValue & 0x008) >> 3){
             //ESP_LOGW(UI_TASK_TAG, "Set Boiler IDLE Mode NOTIFICATION");
-            *bState = HOT_2_IDLE_B;
+            if(*bState != IDLE_B)
+                *bState = HOT_2_IDLE_B;
         }
 
         if((ulNotifiedValue & 0x010) >> 4){
@@ -136,6 +137,19 @@ static void checkNotifications4Boiler(BoilerState *bState){
         if((ulNotifiedValue & 0x020) >> 5){
             //ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT MAX Mode NOTIFICATION");
             *bState = IDLE_2_HOT_MAX_B;
+        }
+
+        if((ulNotifiedValue & 0x040) >> 6) {    //short max heat pulse
+            ESP_LOGW(UI_TASK_TAG, "Set Boiler to conditional IDLE");
+            *bState = HOT_B_2_GRADUAL;
+//            *bState = IDLE_2_HOT_MAX_B;
+//            extraHeatData->enable = true;
+        }
+
+        if((ulNotifiedValue & 0x080) >> 7) {    //long max heat pulse
+//            ESP_LOGW(UI_TASK_TAG, "Set Boiler LONG HOT MAX Mode NOTIFICATION");
+//            *bState = IDLE_2_HOT_MAX_B;
+//            extraHeatData->enable = false;
         }
     }
 
@@ -383,6 +397,7 @@ static void boilerTask(void *pvParameters){
     float targetTemp = 70.0f;       //91.0f
 
     BoilerState boilerState = INIT_B;
+    //ExtraHeatData extraHeatData = {false, 0};
     BoilerStructData boilerStructData = {true, false, true, 0.0f, 0.0f};
     PID_DataStruct myPID_Data = {true, 87.0f, 220.0f, 0.0f, 120.0f, 0.0f, 8191.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0};
     myPID_Data.setPoint = targetTemp - 3.0f;
@@ -418,6 +433,12 @@ static void boilerTask(void *pvParameters){
             case HOT_MAX_B:
 
             break;
+            case HOT_B_2_GRADUAL:
+                if(boilerStructData.thermistorTemp >= (targetTemp - 1))
+                    boilerState = HOT_2_IDLE_B;
+                else
+                    boilerState = HOT_B;
+                break;
             case IDLE_2_HOT_B:
                 myPID_Data.kI = 0.8f;           //0.5
 
