@@ -109,7 +109,8 @@ struct gatts_profile_inst {
 
 
 static void getByteOfPointer(uint8_t *byteData, uint8_t index);
-static bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes, PowderGramsRefData *powderData, uint8_t *boilerPulse);
+static bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes,
+                     PowderGramsRefData *powderData, uint8_t *boilerPulse, uint8_t refTemp);
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
 static void readBytesMCP2307Cont(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
 static bool bitChangedInByte(uint8_t *byteData, const uint8_t bitPos, const bool newValue);
@@ -124,10 +125,13 @@ static void clearCoffeeChamber(uint8_t *dataBytes);
 static void setBrewer2StartPosition(uint8_t *dataBytes);
 static void setBrewer2InjectPosition(uint8_t *dataBytes);
 static void injecBrewerWater(uint8_t *dataBytes, const uint16_t pulses);
-static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses, uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay, bool thirdPowder, uint8_t *boilerPulse);
-static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses, uint8_t *boilerPulse);
+static void injectPowderPlusWater(uint8_t *dataBytes, const uint16_t pulses,
+                                  uint8_t gr, uint8_t powderRefGram, const OutputRelays outputRelay,
+                                  bool thirdPowder, uint8_t *boilerPulse, uint8_t refTemp);
+static void injectOnlyWaterLine(uint8_t *dataBytes, const uint16_t pulses,
+                                uint8_t *boilerPulse, uint8_t refTemp);
 static void injectOnlyWaterLineManual(uint8_t *dataBytes);
-static void doBoilerPulse(uint8_t *dataBytes);
+static void doBoilerPulse(uint8_t *dataBytes, uint8_t refTemp);
 static bool grindAndDeliver(uint8_t *dataBytes, bool checkStop);
 static void add2Counter(const uint8_t repIndex);
 static void cleanMachine(uint8_t *dataBytes);

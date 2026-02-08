@@ -97,6 +97,7 @@ typedef struct PID_Struct{
 
 static bool readMCP3421_ADC(uint16_t *adcValue);
 static void readTemp(BoilerStructData *boilerStructData);
+static void lowPassFilter(BoilerStructData *boilerStructData, float temp);
 static void wait4Control();
 static void wait4BoilerTempValue(float *targetTemperature, PID_DataStruct *pidDataStruct);
 static void check4BoilerTempUpdate(float *targetTemperature, PID_DataStruct *pidDataStruct);

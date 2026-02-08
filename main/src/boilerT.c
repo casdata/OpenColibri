@@ -62,10 +62,17 @@ static void readTemp(BoilerStructData *boilerStructData){
         temp -= 273.15f;
 
         //*thermTemp = temp;
-        boilerStructData->thermistorTemp = temp;
+//        boilerStructData->thermistorTemp = temp;
+        lowPassFilter(boilerStructData, temp);
+
     }
 }
 
+static void lowPassFilter(BoilerStructData *boilerStructData, float temp){
+    float beta = 0.25;
+    boilerStructData->thermistorTemp = boilerStructData->thermistorTemp +
+            beta * (temp - boilerStructData->thermistorTemp);
+}
 
 
 static void wait4Control(){
@@ -533,7 +540,7 @@ static void boilerTask(void *pvParameters){
             if(cTimeTemp >= 3000000){                   //3 seg
                 refTimeTemp = esp_timer_get_time();
 
-                ESP_LOGW(BOILER_TASK_TAG, "TEMP: %f | %f - %d", 
+                ESP_LOGW(BOILER_TASK_TAG, "TEMP_L: %f | %f - %d",
                     boilerStructData.thermistorTemp, myPID_Data.setPoint, boilerState);
             }
         }

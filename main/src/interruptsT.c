@@ -345,7 +345,7 @@ static void interruptsTask(void *pvParameters){
                         }
                     }
 
-                    //ESP_LOGI(INTERRUPTS_TASK_TAG, "%d - %d", count, targetCount);
+//                    ESP_LOGI(INTERRUPTS_TASK_TAG, "%d - %d", count, targetCount);
 
                 break;
                 case MCP23017_INTB_PIN:
