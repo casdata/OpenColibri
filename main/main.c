@@ -13,6 +13,7 @@ QueueHandle_t xQueueInputTimePerPulse = NULL;
 QueueHandle_t xQueueBoilerTemp = NULL;
 QueueHandle_t xQueueUI = NULL;
 QueueHandle_t xQueueData2Boiler = NULL;
+SemaphoreHandle_t i2cBusMutex = NULL;
 
 
 
@@ -115,6 +116,10 @@ static void initGPIO(){
 }
 
 static void initI2C(){
+
+    i2cBusMutex = xSemaphoreCreateMutex();
+    if(i2cBusMutex == NULL)
+        ESP_LOGE(MAIN_TASK_TAG, "i2cBusMutex initialization error!");
 
     int i2c_port = I2C_PORT_NUM;
 

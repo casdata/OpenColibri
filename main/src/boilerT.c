@@ -7,7 +7,11 @@ TaskHandle_t boilerTaskH = NULL;
 QueueHandle_t xQueueUart = NULL;
 
 
-static bool readMCP3421_ADC(uint16_t *adcValue){
+static bool haveValidTemp = false;
+static bool havePendingTemp = false;
+static float pendingTemp = 0.0f;
+
+static bool readMCP3421_ADC(uint16_t *adcValue, uint8_t *configByte){
 
     i2c_cmd_handle_t  cmdHandle = i2c_cmd_link_create();
 
@@ -16,56 +20,85 @@ static bool readMCP3421_ADC(uint16_t *adcValue){
     i2c_master_write_byte(cmdHandle, (uint8_t)(0b00010000), I2C_MASTER_ACK);
     i2c_master_stop(cmdHandle);
 
-    int cmdReturn  = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
+    esp_err_t cmdReturn  = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmdHandle);
+
+    if(cmdReturn != ESP_OK)
+        return false;
 
     vTaskDelay(30 / portTICK_PERIOD_MS);
 
-    if(cmdReturn == ESP_OK){
-        uint8_t dataByte0, dataByte1, dataByte2;
+    uint8_t dataByte0, dataByte1, dataByte2;
 
-        cmdHandle = i2c_cmd_link_create();
-        i2c_master_start(cmdHandle);
-        i2c_master_write_byte(cmdHandle, MCP3421_ADC_ADDR << 1 | I2C_MASTER_READ, I2C_MASTER_ACK);
-        i2c_master_read_byte(cmdHandle, &dataByte2, I2C_MASTER_ACK);
-        i2c_master_read_byte(cmdHandle, &dataByte1, I2C_MASTER_ACK);
-        i2c_master_read_byte(cmdHandle, &dataByte0, I2C_MASTER_NACK);
-        i2c_master_stop(cmdHandle);
+    cmdHandle = i2c_cmd_link_create();
+    i2c_master_start(cmdHandle);
+    i2c_master_write_byte(cmdHandle, MCP3421_ADC_ADDR << 1 | I2C_MASTER_READ, I2C_MASTER_ACK);
+    i2c_master_read_byte(cmdHandle, &dataByte2, I2C_MASTER_ACK);
+    i2c_master_read_byte(cmdHandle, &dataByte1, I2C_MASTER_ACK);
+    i2c_master_read_byte(cmdHandle, &dataByte0, I2C_MASTER_NACK);
+    i2c_master_stop(cmdHandle);
 
-        cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
-        i2c_cmd_link_delete(cmdHandle);
+    cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmdHandle);
 
-        if(cmdReturn == ESP_OK){
-            *adcValue = (dataByte2 << 8) + dataByte1;
-            return true;
-        }
-    }
+    if(cmdReturn != ESP_OK)
+        return false;
 
-    return false;
+    *adcValue = ((uint16_t)dataByte2 << 8) | dataByte1;
+    *configByte = dataByte0;
+    return true;
 
 }
 
 
-static void readTemp(BoilerStructData *boilerStructData){
-    uint16_t adcValue;
+static bool readTemp(BoilerStructData *boilerStructData){
+    uint16_t adcValue = 0;
+    uint8_t configByte = 0;
 
-    if(readMCP3421_ADC(&adcValue)){
+    if(!readMCP3421_ADC(&adcValue, &configByte))
+        return false;
 
-        float thermistorVoltage = adcValue * 0.001f;
+    // RDY clear and the mode we programmed: continuous, 12-bit, PGA 1.
+    if((configByte & 0x80) != 0 || (configByte & 0x7F) != 0x10)
+        return false;
 
-        uint16_t thermistorValue = (thermistorVoltage * 12000)/(3.3f - thermistorVoltage);
+    if(adcValue > 2047)
+        return false;
 
-        //ESP_LOGI(TEMP_TASK_TAG, "Raw temp: %d - %.4f - %d", adcValue, thermistorVoltage, thermistorValue); //1649
+    float thermistorVoltage = adcValue * 0.001f;
+    if(thermistorVoltage < 0.02f)
+        return false;
 
-        float temp = log(thermistorValue);
-        temp = (1.0f / (thermA + (thermB * temp + (thermC * temp * temp * temp))));
-        temp -= 273.15f;
+    float denom = 3.3f - thermistorVoltage;
+    if(denom < 0.05f)
+        return false;
 
-        //*thermTemp = temp;
-//        boilerStructData->thermistorTemp = temp;
+    float thermistorValue = (thermistorVoltage * 12000.0f) / denom;
+    if(thermistorValue < 50.0f || thermistorValue > 200000.0f)
+        return false;
+
+    float temp = log(thermistorValue);
+    temp = (1.0f / (thermA + (thermB * temp + (thermC * temp * temp * temp))));
+    temp -= 273.15f;
+
+    if(temp != temp || temp < -5.0f || temp > 130.0f)
+        return false;
+
+    // Wait for two agreeing samples so a hot restart is not filtered up from 0 through a fake 84°C.
+    if(!haveValidTemp){
+        if(!havePendingTemp || (temp - pendingTemp) > 8.0f || (pendingTemp - temp) > 8.0f){
+            pendingTemp = temp;
+            havePendingTemp = true;
+            return false;
+        }
+
+        boilerStructData->thermistorTemp = temp;
+        haveValidTemp = true;
+        havePendingTemp = false;
+    } else
         lowPassFilter(boilerStructData, temp);
 
-    }
+    return true;
 }
 
 static void lowPassFilter(BoilerStructData *boilerStructData, float temp){
@@ -130,33 +163,34 @@ static void checkNotifications4Boiler(BoilerState *bState){
 
         }
 
+        // Idle wins when it arrives with a boost command. Otherwise boost stays latched.
         if((ulNotifiedValue & 0x008) >> 3){
             //ESP_LOGW(UI_TASK_TAG, "Set Boiler IDLE Mode NOTIFICATION");
             if(*bState != IDLE_B)
                 *bState = HOT_2_IDLE_B;
-        }
+        } else {
+            if((ulNotifiedValue & 0x010) >> 4){
+                //ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT Mode NOTIFICATION");
+                *bState = IDLE_2_HOT_B;
+            }
 
-        if((ulNotifiedValue & 0x010) >> 4){
-            //ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT Mode NOTIFICATION");
-            *bState = IDLE_2_HOT_B;
-        }
+            if((ulNotifiedValue & 0x020) >> 5){
+                //ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT MAX Mode NOTIFICATION");
+                *bState = IDLE_2_HOT_MAX_B;
+            }
 
-        if((ulNotifiedValue & 0x020) >> 5){
-            //ESP_LOGW(UI_TASK_TAG, "Set Boiler HOT MAX Mode NOTIFICATION");
-            *bState = IDLE_2_HOT_MAX_B;
-        }
+            if((ulNotifiedValue & 0x040) >> 6) {    //short max heat pulse
+//                ESP_LOGW(UI_TASK_TAG, "Set Boiler to conditional IDLE");
+                *bState = HOT_B_2_GRADUAL;
+//                *bState = IDLE_2_HOT_MAX_B;
+//                extraHeatData->enable = true;
+            }
 
-        if((ulNotifiedValue & 0x040) >> 6) {    //short max heat pulse
-//            ESP_LOGW(UI_TASK_TAG, "Set Boiler to conditional IDLE");
-            *bState = HOT_B_2_GRADUAL;
-//            *bState = IDLE_2_HOT_MAX_B;
-//            extraHeatData->enable = true;
-        }
-
-        if((ulNotifiedValue & 0x080) >> 7) {    //long max heat pulse
-//            ESP_LOGW(UI_TASK_TAG, "Set Boiler LONG HOT MAX Mode NOTIFICATION");
-//            *bState = IDLE_2_HOT_MAX_B;
-//            extraHeatData->enable = false;
+            if((ulNotifiedValue & 0x080) >> 7) {    //long max heat pulse
+//                ESP_LOGW(UI_TASK_TAG, "Set Boiler LONG HOT MAX Mode NOTIFICATION");
+//                *bState = IDLE_2_HOT_MAX_B;
+//                extraHeatData->enable = false;
+            }
         }
     }
 
@@ -356,12 +390,6 @@ void computePID(PID_DataStruct *pidDataStruct, float inputData, float *outputDat
 
     pidDataStruct->pidP = pidDataStruct->kP * pidDataStruct->error;
 
-    //if(pidDataStruct->error > -3 && pidDataStruct->error < 3)
-    pidDataStruct->pidI += (pidDataStruct->kI * pidDataStruct->error);
-
-    
-    float elapsedTime = 1;
-
     pidDataStruct->pTime = pidDataStruct->cTime;
     pidDataStruct->cTime = esp_timer_get_time();
 
@@ -369,9 +397,20 @@ void computePID(PID_DataStruct *pidDataStruct, float inputData, float *outputDat
     eTime /= 1000000;
     //ESP_LOGI(BOILER_TASK_TAG, "eTime %f", eTime);
 
+    if(eTime <= 0)
+        eTime = 0.001f;
+
     pidDataStruct->pidD = pidDataStruct->kD * ((pidDataStruct->error - pidDataStruct->pError)/eTime);
-    
-    float output = pidDataStruct->pidP + pidDataStruct->pidI + pidDataStruct->pidD + pidDataStruct->offset;
+
+    float iCandidate = pidDataStruct->pidI + (pidDataStruct->kI * pidDataStruct->error);
+    float output = pidDataStruct->pidP + iCandidate + pidDataStruct->pidD + pidDataStruct->offset;
+
+    // Do not wind the integrator while the output is already against the rail.
+    if((output > pidDataStruct->maxOut && pidDataStruct->error > 0.0f) ||
+       (output < pidDataStruct->minOut && pidDataStruct->error < 0.0f))
+        output = pidDataStruct->pidP + pidDataStruct->pidI + pidDataStruct->pidD + pidDataStruct->offset;
+    else
+        pidDataStruct->pidI = iCandidate;
 
     if(output > pidDataStruct->maxOut)
         output = pidDataStruct->maxOut;
@@ -411,6 +450,7 @@ static void boilerTask(void *pvParameters){
     
     double refTimeTemp = esp_timer_get_time();
     double cTimeTemp;
+    double hotSince = 0;
 
     char *tempBuff = malloc(60);
 
@@ -429,9 +469,24 @@ static void boilerTask(void *pvParameters){
 
         check4BoilerTempUpdate(&targetTemp, &myPID_Data);
 
-        readTemp(&boilerStructData);
+        bool tempOk = readTemp(&boilerStructData);
 
-        xQueueOverwrite(xQueueBoilerTemp, (void *) &boilerStructData.thermistorTemp);
+        if(tempOk)
+            xQueueOverwrite(xQueueBoilerTemp, (void *) &boilerStructData.thermistorTemp);
+
+        bool boostState = boilerState == HOT_B || boilerState == HOT_MAX_B ||
+                          boilerState == HOT_B_2_GRADUAL || boilerState == IDLE_2_HOT_B ||
+                          boilerState == IDLE_2_HOT_MAX_B;
+        if(boostState){
+            if(hotSince == 0)
+                hotSince = esp_timer_get_time();
+            else if((esp_timer_get_time() - hotSince) > 90000000.0){
+                ESP_LOGW(BOILER_TASK_TAG, "boost timeout, forcing idle");
+                boilerState = HOT_2_IDLE_B;
+                hotSince = 0;
+            }
+        } else
+            hotSince = 0;
 
 
         switch(boilerState){
@@ -441,6 +496,8 @@ static void boilerTask(void *pvParameters){
 
             break;
             case HOT_B_2_GRADUAL:
+                if(!tempOk && !haveValidTemp)
+                    break;
                 if(boilerStructData.thermistorTemp >= (targetTemp - 1))
                     boilerState = HOT_2_IDLE_B;
                 else
@@ -491,7 +548,7 @@ static void boilerTask(void *pvParameters){
                 boilerState = IDLE_B;
             break;
             default:                        //INIT_B
-                if(boilerStructData.thermistorTemp >= targetTemp - 3.0f){
+                if(tempOk && boilerStructData.thermistorTemp >= targetTemp - 3.0f){
                     xTaskNotify(controlTaskH, 0x04, eSetBits);                              //Notify control task that boiler is ready
                     vTaskDelay(pdMS_TO_TICKS(100));
 
@@ -521,12 +578,12 @@ static void boilerTask(void *pvParameters){
         }
     
 
-        if(myPID_Data.controllerState)
+        if(tempOk && myPID_Data.controllerState)
             if(boilerState != HOT_MAX_B)
                 computePID(&myPID_Data, boilerStructData.thermistorTemp, &boilerStructData.boilerDuty);
             else
                 boilerStructData.boilerDuty = 8191.0f;
-        else 
+        else
             boilerStructData.boilerDuty = 0;
 
 

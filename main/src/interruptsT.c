@@ -4,17 +4,27 @@ TaskHandle_t intTaskH = NULL;
 
 
 static void checkAirBreakSw(uint8_t *iBuff){
-    readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, iBuff, 1);
+    for(int attempt = 0; attempt < 5; attempt++){
+        if(!mcp23017Read(MCP23017_INPUT_ADDR, 0x13, iBuff, 1)){
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
 
-    if(!readSW(iBuff, AIR_BREAK_SW)){
-        xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
-        vTaskDelay(pdMS_TO_TICKS(100));
+        if(!readSW(iBuff, AIR_BREAK_SW)){
+            setWaterInletOpen(false);
+            xTaskNotify(controlTaskH, 0x10, eSetBits);                          //tank full, control may start
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        return;
     }
+
+    ESP_LOGE(INTERRUPTS_TASK_TAG, "airbreak read failed at start");
 }
 
 
-static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oBuff, WaterFlowData *wFlowData, const bool withNotify){
-    readBytesMCP2307(MCP23017_INPUT_ADDR, 0x13, iBuff, 1);
+static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, WaterFlowData *wFlowData){
+    if(!mcp23017Read(MCP23017_INPUT_ADDR, 0x13, iBuff, 1))
+        return;
 
     inputStruct->previousAirBreakSw = inputStruct->airBreakSw;
 
@@ -25,92 +35,54 @@ static void readInputSws(InputSwStruct *inputStruct, uint8_t *iBuff, uint8_t *oB
     inputStruct->cupReleaseSw = readSW(iBuff, CUP_RELEASE_SW);
     inputStruct->cupSensorSw = readSW(iBuff, CUP_SENSOR_SW);
 
+    // Switch pressed (bit clear) means the airbreak is full. Close on that level, not on a one-shot flag.
+    if(!inputStruct->airBreakSw){
+        bool wasOpen = waterInletIsOpen();
+        double now = esp_timer_get_time();
+        static double lastCloseAttempt = 0;
+        bool recheck = (now - lastCloseAttempt) > 2000000.0;
 
-    if(wFlowData->waterFill){
-//        ESP_LOGI(INTERRUPTS_TASK_TAG, "on waterFill");
+        wFlowData->waterFill = false;
+        wFlowData->state = false;
 
-        if(!inputStruct->airBreakSw){
-
-//            ESP_LOGI(INTERRUPTS_TASK_TAG, "close water");
-
-            wFlowData->waterFill = false;
-            wFlowData->state = false;
-
-            if(withNotify)
-                xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
-
-            //close valve
-            readBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
-            vTaskDelay(pdMS_TO_TICKS(100));
-            cleanReadByte4WaterInlet(oBuff);
-
-            writeBytesMCP2307Int(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
-            vTaskDelay(pdMS_TO_TICKS(100));
-
-//            if(wFlowData->alarm){
-//                wFlowData->alarm = false;
-//                xTaskNotify(uiTaskH, 0x01, eSetBits);
-//            }
-
-        } else {
-            double currentTime = esp_timer_get_time() - wFlowData->waterSafeTime;
-
-            if(wFlowData->failSafe && currentTime > 6000000) {      //6 seg
-                ESP_LOGI(INTERRUPTS_TASK_TAG, "emergency close water");
-
-                wFlowData->waterFill = false;
-                wFlowData->state = false;
-
-                //close valve
-                readBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
-                vTaskDelay(pdMS_TO_TICKS(100));
-                cleanReadByte4WaterInlet(oBuff);
-
-                writeBytesMCP2307Int(MCP23017_OUTPUT_ADDR, 0x12, oBuff, 1);
-                vTaskDelay(pdMS_TO_TICKS(100));
-
-//                if(wFlowData->alarm){
-//                    wFlowData->alarm = false;
-//                    xTaskNotify(uiTaskH, 0x01, eSetBits);
-//                }
-
-                vTaskDelay(pdMS_TO_TICKS(1000));
-
-                esp_restart();
-
+        if(wasOpen || recheck){
+            if(setWaterInletOpen(false)){
+                lastCloseAttempt = now;
+                if(wasOpen)
+                    ESP_LOGW(INTERRUPTS_TASK_TAG, "airbreak full, inlet closed");
             }
-
-
         }
 
-        //ESP_LOGI(INTERRUPTS_TASK_TAG, "send noti close w_inlet");
+    } else {
+        if(!inputStruct->previousAirBreakSw){
+            wFlowData->state = true;
+            wFlowData->refTime = esp_timer_get_time();
+        }
+
+        if(wFlowData->state){
+            double currentTime = esp_timer_get_time() - wFlowData->refTime;
+
+            if(!waterInletIsOpen() && currentTime > 2000000){                     //2 seg
+                if(setWaterInletOpen(true)){
+                    wFlowData->waterFill = true;
+                    wFlowData->waterSafeTime = esp_timer_get_time();
+                }
+
+            } else if(waterInletIsOpen() && wFlowData->failSafe){
+                double fillTime = esp_timer_get_time() - wFlowData->waterSafeTime;
+
+                if(fillTime > 6000000){      //6 seg
+                    ESP_LOGI(INTERRUPTS_TASK_TAG, "emergency close water");
+                    setWaterInletOpen(false);
+                    wFlowData->waterFill = false;
+                    wFlowData->state = false;
+
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+                }
+            }
+        }
     }
-
-
-    if(inputStruct->airBreakSw && !inputStruct->previousAirBreakSw){
-        wFlowData->state = true;
-        wFlowData->waterFill = false;
-
-//        ESP_LOGI(INTERRUPTS_TASK_TAG, "open water");
-
-        wFlowData->refTime = esp_timer_get_time();
-
-    }
-
-//    if(wFlowData->state && !inputStruct->airBreakSw){
-//        xTaskNotify(controlTaskH, 0x10, eSetBits);                          //close water inlet
-//
-//        wFlowData->state = false;
-//        if(wFlowData->alarm){
-//            //wFlowData->alarm = false;
-//            xTaskNotify(uiTaskH, 0x01, eSetBits);
-//        }
-//
-//        //ESP_LOGI(INTERRUPTS_TASK_TAG, "send noti close w_inlet");
-//    }
-
-    //ESP_LOGE(INTERRUPTS_TASK_TAG, "wOver: %d brewer: %d air: %d releC: %d ", inputStruct->wasteOverflowSw , 
-        //inputStruct->coffeeBrewerSw, inputStruct->airBreakSw, inputStruct->coffeeReleaseSw);
 
     xQueueOverwrite(xQueueInputsSw, (void *) inputStruct);
 }
@@ -133,15 +105,15 @@ static void check4Notifications(WaterFlowData *wFlowData, PulseTestData *pulseDa
             pulseData->state = true;
 //            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: calculate pulse time");
         }
-        else if((ulNotifiedValue & 0x04) >> 2){
+        if((ulNotifiedValue & 0x04) >> 2){
             pulseData->manualReset = true;
 //            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: prepare 4 manual");
         }
-        else if((ulNotifiedValue & 0x08) >> 3){
+        if((ulNotifiedValue & 0x08) >> 3){
             wFlowData->failSafe= false;
 //            ESP_LOGE(INTERRUPTS_TASK_TAG, "Notification: disable water fail-save");
         }
-        else if((ulNotifiedValue & 0x10) >> 4){
+        if((ulNotifiedValue & 0x10) >> 4){
             wFlowData->failSafe = true;
             wFlowData->waterSafeTime = esp_timer_get_time();
 //            ESP_LOGI(INTERRUPTS_TASK_TAG, "Notification: enable water fail-save");
@@ -176,55 +148,8 @@ static bool check4PulseCount(uint16_t *ptrCount, uint16_t *ptrCountTarget, uint1
     return false;
 }
 
-static void readBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
-    i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
-
-    i2c_master_start(cmdHandle);
-    i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_WRITE, I2C_MASTER_ACK);
-    i2c_master_write_byte(cmdHandle, regAddr, I2C_MASTER_ACK);
-    
-
-    i2c_master_start(cmdHandle);
-    i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_READ, I2C_MASTER_ACK);
-    for(size_t i = 0; i < numOfBytes; i++)
-        i2c_master_read_byte(cmdHandle, (dataBuff + i), I2C_MASTER_ACK);
-
-    i2c_master_stop(cmdHandle);
-
-
-    int cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmdHandle);
-
-}
-
-static void writeBytesMCP2307Int(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
-    i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
-
-    i2c_master_start(cmdHandle);
-    i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_WRITE, I2C_MASTER_ACK);
-    i2c_master_write_byte(cmdHandle, regAddr, I2C_MASTER_ACK);
-    for(size_t i = 0; i < numOfBytes; i++)
-        i2c_master_write_byte(cmdHandle, *(dataBuff + i), I2C_MASTER_ACK);
-
-    i2c_master_stop(cmdHandle);
-
-    int cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmdHandle);
-
-}
-
-
 static bool readSW(uint8_t *byteData, const SensorSw swName){
     return (bool)( (*byteData >> (uint8_t)swName) & 1);
-}
-
-
-static void cleanReadByte4WaterInlet(uint8_t *byteData){
-    *byteData &= 0xDF;      //exclude byte 5
-}
-
-static void setWaterInletBit(uint8_t *byteData){
-    *byteData += 0x20;
 }
 
 
@@ -252,7 +177,6 @@ static void interruptsTask(void *pvParameters){
     bool checkingCount = false;
 
     uint8_t *inputIO_Buff;
-    uint8_t *outputIO_Buff;
 
     InputSwStruct inputSwStruct = {false, false, false, false,
                                    false, false, false, 0};
@@ -260,15 +184,14 @@ static void interruptsTask(void *pvParameters){
     PulseTestData pulseTestData = {false, 0, 0};
 
     inputIO_Buff = (uint8_t *)malloc(1);
-    outputIO_Buff = (uint8_t *)malloc(1);
 
-
+    enableWaterInletOwnership();
     checkAirBreakSw(inputIO_Buff);
     //xTaskNotify(controlTaskH, 0x02, eSetBits);              //Notify control task that is ready
     ESP_LOGI(INTERRUPTS_TASK_TAG, "ONLINE");
 
     //xQueueOverwrite(xQueueInputPulse, (void *) &count);
-    readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData, true);
+    readInputSws(&inputSwStruct, inputIO_Buff, &waterFlowData);
 
     while(1){
 
@@ -288,31 +211,6 @@ static void interruptsTask(void *pvParameters){
                 pulseTestData.refTime = esp_timer_get_time();
 
         }
-
-        if(waterFlowData.state){
-            double currentTime = esp_timer_get_time() - waterFlowData.refTime;
-
-//            if(!waterFlowData.alarm && currentTime > 8000000){      //8 seg
-//                waterFlowData.alarm = true;
-//                xTaskNotify(uiTaskH, 0x02, eSetBits);
-//            } else
-            if (!waterFlowData.waterFill && currentTime > 2000000) {                     //2 seg
-                waterFlowData.waterFill = true;
-
-                //open valve
-                readBytesMCP2307(MCP23017_OUTPUT_ADDR, 0x12, outputIO_Buff, 1);
-                vTaskDelay(pdMS_TO_TICKS(100));
-                cleanReadByte4WaterInlet(outputIO_Buff);
-
-                setWaterInletBit(outputIO_Buff);
-                writeBytesMCP2307Int(MCP23017_OUTPUT_ADDR, 0x12, outputIO_Buff, 1);
-                vTaskDelay(pdMS_TO_TICKS(100));
-
-                waterFlowData.waterSafeTime = esp_timer_get_time();
-
-            }
-        }
-
 
         if(xQueueReceive(xQueueIntB, &pinNum, pdMS_TO_TICKS(10))){
 
@@ -351,7 +249,7 @@ static void interruptsTask(void *pvParameters){
                 case MCP23017_INTB_PIN:
 
 //                    ESP_LOGI(INTERRUPTS_TASK_TAG, "int pin detected");
-                    readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData, false);
+                    readInputSws(&inputSwStruct, inputIO_Buff, &waterFlowData);
 
                     waterFlowData.checkRefTime = esp_timer_get_time();
 
@@ -362,7 +260,7 @@ static void interruptsTask(void *pvParameters){
 
             if(currentTime > 800000) {      //800 mseg
                 waterFlowData.checkRefTime = esp_timer_get_time();
-                readInputSws(&inputSwStruct, inputIO_Buff, outputIO_Buff, &waterFlowData, false);
+                readInputSws(&inputSwStruct, inputIO_Buff, &waterFlowData);
             }
 
         }

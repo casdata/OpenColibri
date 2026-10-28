@@ -2,3 +2,6 @@
 .vscode
 build/
 
+# Local engineering notes. Keep on this machine, do not publish.
+LOCAL_FIRMWARE_NOTES.md
+

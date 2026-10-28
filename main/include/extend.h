@@ -11,6 +11,7 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"          //bt
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "esp_system.h"                     //bt
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -232,6 +233,13 @@ extern QueueHandle_t xQueueInputTimePerPulse;
 extern QueueHandle_t xQueueBoilerTemp;
 extern QueueHandle_t xQueueUI;
 extern QueueHandle_t xQueueData2Boiler;
+extern SemaphoreHandle_t i2cBusMutex;
+
+bool mcp23017Read(uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
+bool mcp23017Write(uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes);
+bool setWaterInletOpen(bool open);
+bool waterInletIsOpen(void);
+void enableWaterInletOwnership(void);
 
 
 #endif //OPENCOLIBRI_EXTEND_H

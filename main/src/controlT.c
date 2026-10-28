@@ -1162,42 +1162,144 @@ bool runDrink(const Recipe *myRecipe, uint8_t *dataBytes,
 
 }
 
-static void readBytesMCP2307Cont(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
+#define INLET_BIT 0x20
+
+static volatile bool preserveWaterInlet = false;
+static volatile bool inletIsOpen = false;
+
+static bool i2cLock(void){
+    if(i2cBusMutex == NULL)
+        return true;
+
+    return xSemaphoreTake(i2cBusMutex, pdMS_TO_TICKS(1000)) == pdTRUE;
+}
+
+static void i2cUnlock(void){
+    if(i2cBusMutex != NULL)
+        xSemaphoreGive(i2cBusMutex);
+}
+
+static bool mcp23017ReadUnlocked(uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
     i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
 
     i2c_master_start(cmdHandle);
     i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_WRITE, I2C_MASTER_ACK);
     i2c_master_write_byte(cmdHandle, regAddr, I2C_MASTER_ACK);
 
-
     i2c_master_start(cmdHandle);
     i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_READ, I2C_MASTER_ACK);
-    for(size_t i = 0; i < numOfBytes; i++)
-        i2c_master_read_byte(cmdHandle, (dataBuff + i), I2C_MASTER_ACK);
+    for(uint8_t i = 0; i < numOfBytes; i++){
+        i2c_ack_type_t ack = (i + 1 == numOfBytes) ? I2C_MASTER_NACK : I2C_MASTER_ACK;
+        i2c_master_read_byte(cmdHandle, dataBuff + i, ack);
+    }
 
     i2c_master_stop(cmdHandle);
 
-
-    int cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
+    esp_err_t cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmdHandle);
 
+    return cmdReturn == ESP_OK;
+}
+
+static bool mcp23017WriteUnlocked(uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
+    i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
+
+    i2c_master_start(cmdHandle);
+    i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_WRITE, I2C_MASTER_ACK);
+    i2c_master_write_byte(cmdHandle, regAddr, I2C_MASTER_ACK);
+    for(uint8_t i = 0; i < numOfBytes; i++)
+        i2c_master_write_byte(cmdHandle, *(dataBuff + i), I2C_MASTER_ACK);
+
+    i2c_master_stop(cmdHandle);
+
+    esp_err_t cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmdHandle);
+
+    return cmdReturn == ESP_OK;
+}
+
+bool mcp23017Read(uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
+    if(dataBuff == NULL || numOfBytes == 0)
+        return false;
+
+    if(!i2cLock())
+        return false;
+
+    bool ok = mcp23017ReadUnlocked(i2cAddr, regAddr, dataBuff, numOfBytes);
+    i2cUnlock();
+    return ok;
+}
+
+bool mcp23017Write(uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
+    if(dataBuff == NULL || numOfBytes == 0)
+        return false;
+
+    if(!i2cLock())
+        return false;
+
+    bool ok = mcp23017WriteUnlocked(i2cAddr, regAddr, dataBuff, numOfBytes);
+    i2cUnlock();
+    return ok;
+}
+
+void enableWaterInletOwnership(void){
+    preserveWaterInlet = true;
+}
+
+bool waterInletIsOpen(void){
+    return inletIsOpen;
+}
+
+bool setWaterInletOpen(bool open){
+    uint8_t portA = 0;
+
+    if(!i2cLock())
+        return false;
+
+    bool ok = mcp23017ReadUnlocked(MCP23017_OUTPUT_ADDR, 0x12, &portA, 1);
+    if(ok){
+        if(open)
+            portA = (portA & (uint8_t)~INLET_BIT) | INLET_BIT;
+        else
+            portA &= (uint8_t)~INLET_BIT;
+
+        ok = mcp23017WriteUnlocked(MCP23017_OUTPUT_ADDR, 0x12, &portA, 1);
+    }
+
+    if(ok)
+        inletIsOpen = open;
+
+    i2cUnlock();
+    return ok;
+}
+
+static void readBytesMCP2307Cont(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
+    mcp23017Read(i2cAddr, regAddr, dataBuff, numOfBytes);
 }
 
 
 void writeBytesMCP2307(const uint8_t i2cAddr, uint8_t regAddr, uint8_t *dataBuff, uint8_t numOfBytes){
-    i2c_cmd_handle_t cmdHandle = i2c_cmd_link_create();
+    if(!i2cLock())
+        return;
 
-    i2c_master_start(cmdHandle);
-    i2c_master_write_byte(cmdHandle, i2cAddr << 1 | I2C_MASTER_WRITE, I2C_MASTER_ACK);
-    i2c_master_write_byte(cmdHandle, regAddr, I2C_MASTER_ACK);
-    for(size_t i = 0; i < numOfBytes; i++)
-        i2c_master_write_byte(cmdHandle, *(dataBuff + i), I2C_MASTER_ACK);
-    
-    i2c_master_stop(cmdHandle);
+    // Inlet bit belongs to setWaterInletOpen. Copy the live bit so a drink step cannot reopen it.
+    if(preserveWaterInlet && i2cAddr == MCP23017_OUTPUT_ADDR &&
+       (regAddr == 0x12 || regAddr == 0x14) && numOfBytes >= 1){
+        uint8_t live = 0;
+        bool inletOn = false;
 
-    int cmdReturn = i2c_master_cmd_begin(I2C_PORT_NUM, cmdHandle, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmdHandle);
+        if(mcp23017ReadUnlocked(MCP23017_OUTPUT_ADDR, 0x12, &live, 1)){
+            dataBuff[0] = (dataBuff[0] & (uint8_t)~INLET_BIT) | (live & INLET_BIT);
+            inletOn = (live & INLET_BIT) != 0;
+        } else
+            dataBuff[0] &= (uint8_t)~INLET_BIT;
 
+        if(mcp23017WriteUnlocked(i2cAddr, regAddr, dataBuff, numOfBytes))
+            inletIsOpen = inletOn;
+    } else
+        mcp23017WriteUnlocked(i2cAddr, regAddr, dataBuff, numOfBytes);
+
+    i2cUnlock();
 }
 
 static bool bitChangedInByte(uint8_t *byteData, const uint8_t bitPos, const bool newValue){
@@ -2402,9 +2504,8 @@ static void injectOnlyWaterLineManual(uint8_t *dataBytes){
 static void doBoilerPulse(uint8_t *dataBytes, uint8_t refTemp){
     float realTemp = 0;
 
-    xQueuePeek(xQueueBoilerTemp, &realTemp, pdMS_TO_TICKS(60));
-
-    if(realTemp < (refTemp - 3)){
+    if(xQueuePeek(xQueueBoilerTemp, &realTemp, pdMS_TO_TICKS(60)) == pdPASS &&
+       realTemp < (refTemp - 3)){
         ESP_LOGW(CONTROL_TASK_TAG, "Start Heating!!!");
 
         float tempDif = (refTemp - 3) - realTemp;
@@ -2415,14 +2516,24 @@ static void doBoilerPulse(uint8_t *dataBytes, uint8_t refTemp){
             vTaskDelay(pdMS_TO_TICKS(3000));
         } else {
             ESP_LOGW(CONTROL_TASK_TAG, "big");
-            vTaskDelay(pdMS_TO_TICKS(4200));
+            vTaskDelay(pdMS_TO_TICKS(4800));
         }
 
         xTaskNotify(boilerTaskH, 0x08, eSetBits);                           //set boiler to idle
         ESP_LOGI(CONTROL_TASK_TAG, "Stop Heating!!!");
 
+        double waitStart = esp_timer_get_time();
+
         do {
-            xQueuePeek(xQueueBoilerTemp, &realTemp, pdMS_TO_TICKS(60));
+            if(xQueuePeek(xQueueBoilerTemp, &realTemp, pdMS_TO_TICKS(60)) != pdPASS)
+                realTemp = 0;
+
+            if((esp_timer_get_time() - waitStart) > 15000000.0){
+                ESP_LOGW(CONTROL_TASK_TAG, "temp wait timeout");
+                xTaskNotify(boilerTaskH, 0x08, eSetBits);
+                break;
+            }
+
             vTaskDelay(pdMS_TO_TICKS(50));
         } while (realTemp < (refTemp - 3));
 
@@ -3452,6 +3563,8 @@ static void controlTask(void *pvParameters){
     double refTimeIdle = 0;
     double cTimeIdle = 0;
     uint8_t idleBoilerPulse = 0;
+
+    ESP_LOGI(CONTROL_TASK_TAG, "STARTING");
 
     ControlData controlData = {IDLE_C, 0, PAGE_1};
     //ContsPowderData conPowderData = {1.8333f, 1.8333f, 1.8333f, 80737.37};
